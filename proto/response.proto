@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package proto;
+
+message ReportResponse {
+  int64 diff = 1; // difference of last Report and our time
+  int64 time = 2; // time
+  int32 trans = 4; // transaction ID
+  int32 seq = 5;
+  bytes sig =  6; // hmac of diff + time + transactionID + seq separated by :
+}
