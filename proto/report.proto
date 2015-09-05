@@ -5,8 +5,8 @@ package proto;
 message ReportRequest {
   int64 time = 1; // time
   string name = 2; // name of the server
-  int32 trans = 3; // transaction ID
-  string reply = 4; // reply address
+  string reply = 3; // reply address
+  int32 trans = 4; // transaction ID
   int32 seq = 5;
-  bytes sig =  6; // hmac of time + name + transactionID + reply + seq separated by :
+  bytes sig =  6; // hmac of time + name + reply + transactionID + seq separated by :
 }

@@ -5,7 +5,8 @@ package proto;
 message ReportResponse {
   int64 diff = 1; // difference of last Report and our time
   int64 time = 2; // time
+  string reply = 3; // reply address
   int32 trans = 4; // transaction ID
   int32 seq = 5;
-  bytes sig =  6; // hmac of diff + time + transactionID + seq separated by :
+  bytes sig =  6; // hmac of diff + time + reply + transactionID + seq separated by :
 }

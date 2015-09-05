@@ -3,31 +3,23 @@ package main
 import (
 	"time"
 
-	"github.com/levenlabs/go-srvclient"
-	"github.com/mediocregopher/skyapi/client"
-	"github.com/levenlabs/saturn/config"
-	"net"
 	"github.com/levenlabs/go-llog"
-	. "github.com/levenlabs/saturn/proto"
-	"github.com/golang/protobuf/proto"
+	"github.com/levenlabs/go-srvclient"
+	"github.com/levenlabs/saturn/config"
 	"github.com/levenlabs/saturn/sync"
+	"github.com/mediocregopher/skyapi/client"
+	"net"
 )
 
 func main() {
-	var msg proto.Message
-	var fn func(proto.Message, *net.UDPAddr)
-	if config.MasterAddr == "" {
+	if config.IsMaster {
 		llog.Info("starting as master")
 		go advertise()
-		msg = &ReportRequest{}
-		fn = sync.HandleReport
 	} else {
 		llog.Info("starting as slave", llog.KV{"master": config.MasterAddr})
 		go reportSpin()
-		msg = &ReportResponse{}
-		fn = sync.HandleResponse
 	}
-	listenSpin(msg, fn)
+	listenSpin()
 }
 
 func advertise() {
@@ -38,7 +30,7 @@ func advertise() {
 		}
 		err = client.Provide(
 			skyapiAddr, "saturn", config.ListenAddr, 1, 100,
-			-1, 15 * time.Second,
+			-1, 15*time.Second,
 		)
 		llog.Fatal("error providing to skyapi", llog.KV{"err": err})
 	}
@@ -55,7 +47,7 @@ func reportSpin() {
 	}
 }
 
-func listenSpin(msg proto.Message, fn func(proto.Message, *net.UDPAddr)) {
+func listenSpin() {
 	listenAddr, err := net.ResolveUDPAddr("udp", config.ListenAddr)
 	if err != nil {
 		llog.Fatal("error resolving UDP addr", llog.KV{"err": err, "addr": config.ListenAddr})
@@ -67,17 +59,11 @@ func listenSpin(msg proto.Message, fn func(proto.Message, *net.UDPAddr)) {
 	}
 
 	//todo: currently the average size of udp mesages is ~80 bytes so should we make this smaller?
-	buf := make([]byte, 256)
+	buf := make([]byte, 160)
 	var n int
 	var addr *net.UDPAddr
 	for {
 		n, addr, err = conn.ReadFromUDP(buf)
-		err = proto.Unmarshal(buf[0:n], msg)
-		if err != nil {
-			llog.Fatal("unmarshaling error: ", llog.KV{"err": err, "n": n, "src": addr})
-			continue
-		}
-		llog.Info("read udp", llog.KV{"n": n})
-		fn(msg, addr)
+		sync.HandleMessage(buf[0:n], addr)
 	}
 }

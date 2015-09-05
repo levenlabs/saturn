@@ -8,10 +8,12 @@ import "github.com/mediocregopher/lever"
 // Configurable variables which are made available
 var (
 	ListenAddr string
-	SkyAPIAddr      string
-	MasterAddr      string
-	Name  string
-	HMACKey []byte
+	SkyAPIAddr string
+	MasterAddr string
+	Name       string
+	HMACKey    []byte
+	Iterations int32
+	IsMaster   bool
 )
 
 func init() {
@@ -38,12 +40,22 @@ func init() {
 		Description: "The hmac key for each report request. Must be the same across all nodes!",
 		Default:     "secret",
 	})
+	l.Add(lever.Param{
+		Name:        "--iter",
+		Description: "The number of iterations",
+		Default:     "1",
+	})
 	l.Parse()
 
 	ListenAddr, _ = l.ParamStr("--listen-addr")
 	SkyAPIAddr, _ = l.ParamStr("--skyapi-addr")
 	MasterAddr, _ = l.ParamStr("--master-addr")
+	if MasterAddr == "" {
+		IsMaster = true
+	}
 	Name, _ = l.ParamStr("--name")
 	k, _ := l.ParamStr("--hmac-key")
 	HMACKey = []byte(k)
+	i, _ := l.ParamInt("--iter")
+	Iterations = int32(i)
 }

@@ -16,6 +16,7 @@ var _ = math.Inf
 type ReportResponse struct {
 	Diff  int64  `protobuf:"varint,1,opt,name=diff" json:"diff,omitempty"`
 	Time  int64  `protobuf:"varint,2,opt,name=time" json:"time,omitempty"`
+	Reply string `protobuf:"bytes,3,opt,name=reply" json:"reply,omitempty"`
 	Trans int32  `protobuf:"varint,4,opt,name=trans" json:"trans,omitempty"`
 	Seq   int32  `protobuf:"varint,5,opt,name=seq" json:"seq,omitempty"`
 	Sig   []byte `protobuf:"bytes,6,opt,name=sig,proto3" json:"sig,omitempty"`
