@@ -14,6 +14,8 @@ var (
 	HMACKey    []byte
 	Iterations int32
 	IsMaster   bool
+	Threshold  float64
+	Verbose    bool
 )
 
 func init() {
@@ -21,7 +23,7 @@ func init() {
 	l.Add(lever.Param{
 		Name:        "--listen-addr",
 		Description: "Address to listen on for requests and responses",
-		Default:     "0.0.0.0:8123",
+		Default:     "0.0.0.0:4123",
 	})
 	l.Add(lever.Param{
 		Name:        "--skyapi-addr",
@@ -41,9 +43,19 @@ func init() {
 		Default:     "secret",
 	})
 	l.Add(lever.Param{
-		Name:        "--iter",
-		Description: "The number of iterations",
-		Default:     "1",
+		Name:        "--rounds",
+		Description: "The number of offsets used to calculate the slave's actual offset.",
+		Default:     "5",
+	})
+	l.Add(lever.Param{
+		Name:        "--threshold",
+		Description: "The threshold in milliseconds for reporting a server",
+		Default:     "5000",
+	})
+	l.Add(lever.Param{
+		Name:        "--v",
+		Description: "Turn on verbose logging",
+		Flag:        true,
 	})
 	l.Parse()
 
@@ -56,6 +68,9 @@ func init() {
 	Name, _ = l.ParamStr("--name")
 	k, _ := l.ParamStr("--hmac-key")
 	HMACKey = []byte(k)
-	i, _ := l.ParamInt("--iter")
+	i, _ := l.ParamInt("--rounds")
 	Iterations = int32(i)
+	i, _ = l.ParamInt("--threshold")
+	Threshold = float64(i)
+	Verbose = l.ParamFlag("--v")
 }

@@ -12,6 +12,9 @@ import (
 )
 
 func main() {
+	if !config.Verbose {
+		llog.SetLevel(llog.WarnLevel)
+	}
 	if config.IsMaster {
 		llog.Info("starting as master")
 		go advertise()
@@ -43,7 +46,7 @@ func reportSpin() {
 	}
 	for {
 		sync.SendReport(serverAddr)
-		time.Sleep(time.Second * time.Duration(5))
+		time.Sleep(time.Second * time.Duration(10))
 	}
 }
 
