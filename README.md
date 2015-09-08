@@ -65,11 +65,12 @@ Second RTT = |30 - 26| = 4
 Total RTTs = 7
 Total Offsets = (-6 + -7) = -13
 
-Slave offset = (-13 + 7) / 3 = -5
+Slave offset = (-13 + (7 / 2)) / 2 = -4.75
 
-* You'll notice this is 1 second off, but keep in mind this was done
- with seconds and not with milliseconds. *
 ```
+
+You'll notice this is 0.75 second off, but keep in mind this was done with
+seconds and not with milliseconds.
 
 ## Todo
 
