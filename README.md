@@ -30,7 +30,7 @@ Note: The `--rounds` count only needs to be configured on the master.
 When a slave is over the threshold passed with `--threshold` a warning will
 be printed to stdout:
 
-    ~ WARN -- slave offset is over threshold -- ip="10.42.0.9" offset="-4.984391125000001"
+    ~ WARN -- slave offset is over threshold -- name="10.42.0.9" offset="-4.984391125000001"
 
 This follows the format of [llog](https://github.com/LevenLabs/go-llog)
 messages. There will be more configurable options in the future.

@@ -41,7 +41,7 @@ func calculateAverageOffset(tripTimes []time.Duration, offsets []int64) float64 
 	return (totalOffsets + (totalTimes / 2)) / count
 }
 
-func calcOffsetForTransaction(ip net.IP, trans int32) {
+func calcOffsetForTransaction(ip net.IP, trans int32, name string) {
 	tMutex.RLock()
 	k := getTransactionKey(ip, trans)
 	t, ok := transactions[k]
@@ -51,21 +51,21 @@ func calcOffsetForTransaction(ip net.IP, trans int32) {
 	}
 	iters := math.Ceil(float64(t.LastSeq) / float64(2))
 	if iters == 0 {
-		llog.Error("finalizing transaction with 0 iterations", llog.KV{"trans": trans, "ip": ip.String()})
+		llog.Error("finalizing transaction with 0 iterations", llog.KV{"trans": trans, "name": name})
 		return
 	}
 	if len(t.TripTimes) != len(t.Offsets) {
 		llog.Error("finalizing transaction with invalid iterations", llog.KV{
 			"trips":   len(t.TripTimes),
 			"offsets": len(t.Offsets),
-			"ip":      t.IP.String(),
+			"name":    name,
 		})
 		return
 	}
 	offsetInMS := calculateAverageOffset(t.TripTimes, t.Offsets)
-	llog.Info("slave offset", llog.KV{"ip": t.IP.String(), "offset": offsetInMS})
+	llog.Info("slave offset", llog.KV{"name": name, "offset": offsetInMS})
 
 	if config.Threshold < math.Abs(offsetInMS) {
-		llog.Warn("slave offset is over threshold", llog.KV{"ip": t.IP.String(), "offset": offsetInMS})
+		llog.Warn("slave offset is over threshold", llog.KV{"name": name, "offset": offsetInMS})
 	}
 }

@@ -26,7 +26,7 @@ func SendReport(serverAddr *net.UDPAddr) {
 		llog.Error("marshal error in SendReport", llog.KV{"err": err})
 		return
 	}
-	startTransaction(req.Trans, serverAddr, now)
+	startTransaction(req.Trans, serverAddr, now, req.Name)
 	send(REPORT, serverAddr, d)
 }
 
@@ -122,7 +122,7 @@ func HandleResponse(msg proto.Message, srcAddr *net.UDPAddr) {
 	//seq starts at 1 so after 1 iteration it'll be at 3
 	//only the master can terminate a sequence
 	if config.IsMaster && (resp.Seq/2) >= config.Iterations {
-		calcOffsetForTransaction(srcAddr.IP, resp.Trans)
+		calcOffsetForTransaction(srcAddr.IP, resp.Trans, t.Name)
 		cleanupTransaction(srcAddr.IP, resp.Trans)
 		return
 	}

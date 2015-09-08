@@ -51,6 +51,40 @@ func TestHandleReport(t *T) {
 	assert.Equal(t, 0, len(transactions))
 }
 
+func TestHandleReportName(t *T) {
+	now := time.Now()
+
+	//make report that's 1 second in the future
+	future := now.Add(time.Second)
+	req := makeReport(addr.IP, future)
+	req.Name = "Test"
+
+	//handle report
+	recordNewRequest(req, now, addr)
+
+	tMutex.RLock()
+	v, ok := transactions[getTransactionKey(addr.IP, req.Trans)]
+	assert.True(t, ok)
+	assert.Equal(t, req.Name, v.Name)
+	tMutex.RUnlock()
+
+	//now cleanup
+	cleanupTransaction(addr.IP, req.Trans)
+	assert.Equal(t, 0, len(transactions))
+
+	//make report with no name
+	req = makeReport(addr.IP, future)
+
+	//handle report
+	recordNewRequest(req, now, addr)
+
+	tMutex.RLock()
+	v, ok = transactions[getTransactionKey(addr.IP, req.Trans)]
+	assert.True(t, ok)
+	assert.Equal(t, addr.IP.String(), v.Name)
+	tMutex.RUnlock()
+}
+
 func TestHandleResponse(t *T) {
 	now := time.Now()
 

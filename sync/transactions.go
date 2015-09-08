@@ -21,6 +21,7 @@ var tMutex = &sync.RWMutex{}
 
 type Transaction struct {
 	IP           net.IP
+	Name         string
 	LastSeq      int32
 	TripTimes    []time.Duration
 	LastResponse time.Time
@@ -157,11 +158,15 @@ func makeResponse(now time.Time, diff int64, trans int32, lastSeq int32) *Report
 	return resp
 }
 
-func startTransaction(trans int32, srcAddr *net.UDPAddr, now time.Time) {
+func startTransaction(trans int32, srcAddr *net.UDPAddr, now time.Time, name string) {
 	t := &Transaction{
 		IP:           srcAddr.IP,
+		Name:         name,
 		LastSeq:      1,
 		LastResponse: now,
+	}
+	if t.Name == "" {
+		t.Name = srcAddr.IP.String()
 	}
 	tMutex.RLock()
 	defer tMutex.RUnlock()
@@ -190,7 +195,7 @@ func startTransaction(trans int32, srcAddr *net.UDPAddr, now time.Time) {
 }
 
 func recordNewRequest(req *ReportRequest, now time.Time, srcAddr *net.UDPAddr) {
-	startTransaction(req.Trans, srcAddr, now)
+	startTransaction(req.Trans, srcAddr, now, req.Name)
 	//now create the TripTimes array to include the estimated number of triptimes
 	tMutex.RLock()
 	t, _ := transactions[getTransactionKey(srcAddr.IP, req.Trans)]
