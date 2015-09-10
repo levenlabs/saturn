@@ -15,7 +15,7 @@ var (
 	Iterations int32
 	IsMaster   bool
 	Threshold  float64
-	Verbose    bool
+	LogLevel   string
 )
 
 func init() {
@@ -23,7 +23,7 @@ func init() {
 	l.Add(lever.Param{
 		Name:        "--listen-addr",
 		Description: "Address to listen on for requests and responses",
-		Default:     "0.0.0.0:4123",
+		Default:     ":4123",
 	})
 	l.Add(lever.Param{
 		Name:        "--skyapi-addr",
@@ -31,7 +31,7 @@ func init() {
 	})
 	l.Add(lever.Param{
 		Name:        "--master-addr",
-		Description: "The master to connect to. If empty, then this node assumes its the master. If a hostname, it will do a SRV request.",
+		Description: "The master to connect to. If empty, then this node assumes its the master. If just a hostname, it will try to do a SRV request.",
 	})
 	l.Add(lever.Param{
 		Name:        "--name",
@@ -53,9 +53,9 @@ func init() {
 		Default:     "5000",
 	})
 	l.Add(lever.Param{
-		Name:        "--v",
-		Description: "Turn on verbose logging",
-		Flag:        true,
+		Name:        "--log-level",
+		Description: "Adjust the log level. Valid options are: error, warn, info, debug",
+		Default:     "warn",
 	})
 	l.Parse()
 
@@ -72,5 +72,5 @@ func init() {
 	Iterations = int32(i)
 	i, _ = l.ParamInt("--threshold")
 	Threshold = float64(i)
-	Verbose = l.ParamFlag("--v")
+	LogLevel, _ = l.ParamStr("--log-level")
 }

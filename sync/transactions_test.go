@@ -51,6 +51,25 @@ func TestHandleReport(t *T) {
 	assert.Equal(t, 0, len(transactions))
 }
 
+func TestTransactionAging(t *T) {
+	now := time.Now()
+
+	//make report that's 1 second in the future
+	future := now.Add(time.Second)
+	req := makeReport(addr.IP, future)
+
+	//subtract a minute so it expires
+	now = now.Add(time.Minute * -1)
+
+	//handle report
+	recordNewRequest(req, now, addr)
+
+	//cleanup
+	removeOldTransactions()
+
+	assert.Equal(t, 0, len(transactions))
+}
+
 func TestHandleReportName(t *T) {
 	now := time.Now()
 
@@ -83,6 +102,10 @@ func TestHandleReportName(t *T) {
 	assert.True(t, ok)
 	assert.Equal(t, addr.IP.String(), v.Name)
 	tMutex.RUnlock()
+
+	//now cleanup
+	cleanupTransaction(addr.IP, req.Trans)
+	assert.Equal(t, 0, len(transactions))
 }
 
 func TestHandleResponse(t *T) {

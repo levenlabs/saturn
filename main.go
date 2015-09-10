@@ -9,20 +9,34 @@ import (
 	"github.com/levenlabs/saturn/sync"
 	"github.com/mediocregopher/skyapi/client"
 	"net"
+	"strings"
 )
 
 func main() {
-	if !config.Verbose {
-		llog.SetLevel(llog.WarnLevel)
-	}
+	llog.SetLevelFromString(config.LogLevel)
 	if config.IsMaster {
 		llog.Info("starting as master")
 		go advertise()
 	} else {
-		llog.Info("starting as slave", llog.KV{"master": config.MasterAddr})
+		masterAddr := lookupMaster()
+		llog.Info("starting as slave", llog.KV{"master": config.MasterAddr, "addr": masterAddr})
 		go reportSpin()
 	}
 	listenSpin()
+}
+
+func lookupMaster() string {
+	//see if they passed a hostname without a port and then do a srv lookup
+	masterAddr := config.MasterAddr
+	_, _, err := net.SplitHostPort(config.MasterAddr)
+	if err != nil && strings.Contains(err.Error(), "missing port") {
+		masterAddr, err = srvclient.SRV(config.MasterAddr)
+		if err != nil {
+			llog.Fatal("error resolving master-addr using srv", llog.KV{"err": err, "addr": config.MasterAddr})
+			return ""
+		}
+	}
+	return masterAddr
 }
 
 func advertise() {
@@ -31,22 +45,37 @@ func advertise() {
 		if err != nil {
 			llog.Fatal("error resolving skyapi-addr", llog.KV{"err": err, "addr": config.SkyAPIAddr})
 		}
-		err = client.Provide(
-			skyapiAddr, "saturn", config.ListenAddr, 1, 100,
-			-1, 15*time.Second,
-		)
-		llog.Fatal("error providing to skyapi", llog.KV{"err": err})
+
+		llog.Info("connecting to skyapi", llog.KV{"resolvedAddr": skyapiAddr, "thisAddr": config.ListenAddr})
+
+		go func() {
+			err := client.ProvideOpts(client.Opts{
+				SkyAPIAddr:        skyapiAddr,
+				Service:           "saturn",
+				ThisAddr:          config.ListenAddr,
+				ReconnectAttempts: 3,
+			})
+			llog.Fatal("skyapi giving up reconnecting", llog.KV{
+				"addr":         config.SkyAPIAddr,
+				"resolvedAddr": skyapiAddr,
+				"err":          err,
+			})
+		}()
 	}
 }
 
 func reportSpin() {
-	serverAddr, err := net.ResolveUDPAddr("udp", config.MasterAddr)
-	if err != nil {
-		llog.Fatal("error resolving UDP addr", llog.KV{"err": err, "addr": config.MasterAddr})
-	}
-	for {
+	var masterAddr string
+	var serverAddr *net.UDPAddr
+	var err error
+	for range time.Tick(10 * time.Second) {
+		masterAddr = lookupMaster()
+		serverAddr, err = net.ResolveUDPAddr("udp", masterAddr)
+		if err != nil {
+			llog.Fatal("error resolving UDP addr", llog.KV{"err": err, "addr": masterAddr})
+		}
+		llog.Info("sending report", llog.KV{"addr": serverAddr})
 		sync.SendReport(serverAddr)
-		time.Sleep(time.Second * time.Duration(10))
 	}
 }
 

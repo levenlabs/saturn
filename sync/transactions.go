@@ -28,6 +28,27 @@ type Transaction struct {
 	Offsets      []int64
 }
 
+func init() {
+	go func() {
+		for range time.Tick(1 * time.Minute) {
+			removeOldTransactions()
+		}
+	}()
+}
+
+func removeOldTransactions() {
+	now := time.Now()
+	tMutex.Lock()
+	for k, t := range transactions {
+		//timeout all transactions 1 minute after the last response
+		if now.Sub(t.LastResponse).Minutes() < 1.0 {
+			continue
+		}
+		delete(transactions, k)
+	}
+	tMutex.Unlock()
+}
+
 func getTransactionKey(ip net.IP, t int32) string {
 	return strings.Join([]string{ip.String(), strconv.FormatInt(int64(t), 36)}, "|")
 }
@@ -96,14 +117,14 @@ func verifyResponse(resp *ReportResponse) bool {
 	return hmac.Equal(signResponse(resp), resp.Sig)
 }
 
-func send(t byte, addr *net.UDPAddr, d []byte) {
+func send(t MsgType, addr *net.UDPAddr, d []byte) {
 	c, err := net.DialUDP("udp", nil, addr)
 	if err != nil {
 		llog.Error("dial error in SendReport", llog.KV{"err": err})
 		return
 	}
 	defer c.Close()
-	_, err = c.Write(append([]byte{t}, d...))
+	_, err = c.Write(append([]byte{byte(t)}, d...))
 	if err != nil {
 		llog.Error("write error in SendReport", llog.KV{"err": err})
 	}
@@ -130,7 +151,7 @@ func sendResponse(resp *ReportResponse, reply string, srcAddr *net.UDPAddr) erro
 	}
 	tMutex.Unlock()
 
-	send(RESPONSE, destAddr, d)
+	send(Response, destAddr, d)
 	return nil
 }
 
@@ -168,38 +189,18 @@ func startTransaction(trans int32, srcAddr *net.UDPAddr, now time.Time, name str
 	if t.Name == "" {
 		t.Name = srcAddr.IP.String()
 	}
-	tMutex.RLock()
-	defer tMutex.RUnlock()
+	tMutex.Lock()
+	defer tMutex.Unlock()
 	k := getTransactionKey(srcAddr.IP, trans)
 	transactions[k] = t
-	go func(t *Transaction, k string) {
-		for {
-			//timeout all transactions 1 minute after the last response
-			time.Sleep(t.LastResponse.Add(time.Minute).Sub(time.Now()))
-			if time.Now().Sub(t.LastResponse).Minutes() < 1.0 {
-				continue
-			}
-			tMutex.RLock()
-			t2, ok := transactions[k]
-			tMutex.RUnlock()
-			//delete it from the map only if the pointer is the same
-			if ok && t2 == t {
-				//this should *always* happen for the
-				tMutex.Lock()
-				delete(transactions, k)
-				tMutex.Unlock()
-			}
-			break
-		}
-	}(t, k)
 }
 
 func recordNewRequest(req *ReportRequest, now time.Time, srcAddr *net.UDPAddr) {
 	startTransaction(req.Trans, srcAddr, now, req.Name)
 	//now create the TripTimes array to include the estimated number of triptimes
-	tMutex.RLock()
+	tMutex.Lock()
 	t, _ := transactions[getTransactionKey(srcAddr.IP, req.Trans)]
-	defer tMutex.RUnlock()
+	defer tMutex.Unlock()
 	t.TripTimes = make([]time.Duration, 0, config.Iterations+1)
 	t.Offsets = make([]int64, 0, config.Iterations+1)
 	//store the first offset and we'll calculate the trip time when we get the first response
@@ -224,29 +225,23 @@ func verifyExistingTransaction(resp *ReportResponse, srcAddr *net.UDPAddr) *Tran
 	tMutex.RLock()
 	t, ok := transactions[getTransactionKey(srcAddr.IP, resp.Trans)]
 	defer tMutex.RUnlock()
+	kv := llog.KV{
+		"addr":        srcAddr,
+		"seq":         resp.Seq,
+		"transaction": resp.Trans,
+	}
 	if !ok {
-		llog.Warn("received message for old transaction", llog.KV{
-			"addr":        srcAddr,
-			"seq":         resp.Seq,
-			"transaction": resp.Trans,
-		})
+		llog.Warn("received message for old transaction", kv)
 		return nil
 	}
 	if !t.IP.Equal(srcAddr.IP) {
-		llog.Warn("mid-transaction IP change detected", llog.KV{
-			"addr":        srcAddr,
-			"origAddr":    t.IP.String(),
-			"transaction": resp.Trans,
-		})
+		kv["origAddr"] = t.IP.String()
+		llog.Warn("mid-transaction IP change detected", kv)
 		return nil
 	}
 	if t.LastSeq+1 != resp.Seq {
-		llog.Warn("mid-transaction seq out of order", llog.KV{
-			"addr":        srcAddr,
-			"seq":         resp.Seq,
-			"expectedSeq": (t.LastSeq + 1),
-			"transaction": resp.Trans,
-		})
+		kv["expectedSeq"] = (t.LastSeq + 1)
+		llog.Warn("mid-transaction seq out of order", kv)
 		return nil
 	}
 	return t

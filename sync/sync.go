@@ -10,12 +10,11 @@ import (
 	"time"
 )
 
-var defaultReq = &ReportRequest{}
-var defaultResp = &ReportResponse{}
+type MsgType byte
 
 const (
-	REPORT   = byte(2)
-	RESPONSE = byte(3)
+	Report   MsgType = 2
+	Response         = 3
 )
 
 func SendReport(serverAddr *net.UDPAddr) {
@@ -27,7 +26,7 @@ func SendReport(serverAddr *net.UDPAddr) {
 		return
 	}
 	startTransaction(req.Trans, serverAddr, now, req.Name)
-	send(REPORT, serverAddr, d)
+	send(Report, serverAddr, d)
 }
 
 func HandleMessage(d []byte, srcAddr *net.UDPAddr) {
@@ -36,12 +35,12 @@ func HandleMessage(d []byte, srcAddr *net.UDPAddr) {
 	}
 	var msg proto.Message
 	var fn func(proto.Message, *net.UDPAddr)
-	switch d[0] {
-	case REPORT:
-		msg = defaultReq
+	switch MsgType(d[0]) {
+	case Report:
+		msg = &ReportRequest{}
 		fn = HandleReport
-	case RESPONSE:
-		msg = defaultResp
+	case Response:
+		msg = &ReportResponse{}
 		fn = HandleResponse
 	default:
 		llog.Warn("received invalid first byte", llog.KV{"byte": d[0], "src": srcAddr})
