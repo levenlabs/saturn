@@ -19,13 +19,26 @@ var macSep = []byte(":")
 var transactions = map[string]*Transaction{}
 var tMutex = &sync.RWMutex{}
 
+//todo: currently the average size of udp mesages is ~80 bytes so should we make this smaller?
+const BufferSize = 160
+
 type Transaction struct {
-	IP           net.IP
+	ID           int32
+	Addr         *net.UDPAddr
 	Name         string
-	LastSeq      int32
 	TripTimes    []time.Duration
-	LastResponse time.Time
 	Offsets      []int64
+	LastResponse time.Time
+	seq          int32
+	conn         *net.UDPConn
+	jobCh        chan *Job
+	closed       bool
+}
+
+type Job struct {
+	MType   MsgType
+	Msg     proto.Message
+	SrcAddr *net.UDPAddr
 }
 
 func init() {
@@ -38,47 +51,35 @@ func init() {
 
 func removeOldTransactions() {
 	now := time.Now()
-	tMutex.Lock()
-	for k, t := range transactions {
+	tMutex.RLock()
+	var oldTransactions []*Transaction
+	for _, t := range transactions {
 		//timeout all transactions 1 minute after the last response
 		if now.Sub(t.LastResponse).Minutes() < 1.0 {
 			continue
 		}
-		delete(transactions, k)
+		llog.Warn("had to clean up stale transaction", llog.KV{
+			"seq":   t.seq,
+			"trans": t.ID,
+			"src":   t.Addr,
+		})
+		oldTransactions = append(oldTransactions, t)
 	}
-	tMutex.Unlock()
+	tMutex.RUnlock()
+	for _, t := range oldTransactions {
+		t.Close()
+	}
 }
 
 func getTransactionKey(ip net.IP, t int32) string {
 	return strings.Join([]string{ip.String(), strconv.FormatInt(int64(t), 36)}, "|")
 }
 
-func cleanupTransaction(ip net.IP, trans int32) {
-	tMutex.Lock()
-	delete(transactions, getTransactionKey(ip, trans))
-	tMutex.Unlock()
-}
-
-func transactionExists(ip net.IP, trans int32) bool {
+func getTransaction(ip net.IP, trans int32) *Transaction {
 	tMutex.RLock()
-	_, ok := transactions[getTransactionKey(ip, trans)]
-	defer tMutex.RUnlock()
-	return ok
-}
-
-func generateTransID(ip net.IP) int32 {
-	var n int32
-	var ok bool
-	tMutex.RLock()
-	defer tMutex.RUnlock()
-	for {
-		n = rand.Int31()
-		//make sure this ID doesn't already exist
-		if _, ok = transactions[getTransactionKey(ip, n)]; !ok {
-			break
-		}
-	}
-	return n
+	t, _ := transactions[getTransactionKey(ip, trans)]
+	tMutex.RUnlock()
+	return t
 }
 
 func signReport(req *ReportRequest) []byte {
@@ -88,8 +89,6 @@ func signReport(req *ReportRequest) []byte {
 	mac.Write([]byte(req.Name))
 	mac.Write(macSep)
 	mac.Write([]byte(req.Reply))
-	mac.Write(macSep)
-	mac.Write([]byte(strconv.FormatInt(int64(req.Trans), 36)))
 	mac.Write(macSep)
 	mac.Write([]byte(strconv.FormatInt(int64(req.Seq), 36)))
 	return mac.Sum(nil)
@@ -117,49 +116,28 @@ func verifyResponse(resp *ReportResponse) bool {
 	return hmac.Equal(signResponse(resp), resp.Sig)
 }
 
-func send(t MsgType, addr *net.UDPAddr, d []byte) {
-	c, err := net.DialUDP("udp", nil, addr)
+func getReportBytes(r *ReportRequest) ([]byte, error) {
+	d, err := proto.Marshal(r)
 	if err != nil {
-		llog.Error("dial error in SendReport", llog.KV{"err": err})
-		return
+		return nil, err
 	}
-	defer c.Close()
-	_, err = c.Write(append([]byte{byte(t)}, d...))
-	if err != nil {
-		llog.Error("write error in SendReport", llog.KV{"err": err})
-	}
+	d = append([]byte{byte(Report)}, d...)
+	return d, nil
 }
 
-func sendResponse(resp *ReportResponse, reply string, srcAddr *net.UDPAddr) error {
-	destAddr, err := correctReply(reply, srcAddr)
+func GetResponseBytes(r *ReportResponse) ([]byte, error) {
+	d, err := proto.Marshal(r)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	llog.Debug("send resp", llog.KV{"dest": destAddr, "seq": resp.Seq, "diff": resp.Diff})
-	d, err := proto.Marshal(resp)
-	if err != nil {
-		return err
-	}
-
-	tMutex.Lock()
-	t, ok := transactions[getTransactionKey(srcAddr.IP, resp.Trans)]
-	if !ok {
-		llog.Warn("sending response without a transaction ", llog.KV{"dest": destAddr, "seq": resp.Seq})
-	} else {
-		t.LastSeq = resp.Seq
-	}
-	tMutex.Unlock()
-
-	send(Response, destAddr, d)
-	return nil
+	d = append([]byte{byte(Response)}, d...)
+	return d, nil
 }
 
-func makeReport(src net.IP, now time.Time) *ReportRequest {
+func makeReport(now time.Time) *ReportRequest {
 	req := &ReportRequest{
 		Time:  now.UnixNano(),
 		Name:  config.Name,
-		Trans: generateTransID(src),
 		Seq:   1,
 		Reply: config.ListenAddr,
 	}
@@ -171,7 +149,6 @@ func makeResponse(now time.Time, diff int64, trans int32, lastSeq int32) *Report
 	resp := &ReportResponse{
 		Diff:  diff,
 		Time:  now.UnixNano(),
-		Reply: config.ListenAddr,
 		Trans: trans,
 		Seq:   lastSeq + 1,
 	}
@@ -179,70 +156,177 @@ func makeResponse(now time.Time, diff int64, trans int32, lastSeq int32) *Report
 	return resp
 }
 
-func startTransaction(trans int32, srcAddr *net.UDPAddr, now time.Time, name string) {
+func InitTransaction(addr *net.UDPAddr, c *net.UDPConn) *Transaction {
 	t := &Transaction{
-		IP:           srcAddr.IP,
-		Name:         name,
-		LastSeq:      1,
-		LastResponse: now,
+		Addr:         addr,
+		LastResponse: time.Now(),
+		conn:         c,
+		jobCh:        make(chan *Job),
+		Name:         addr.IP.String(),
 	}
-	if t.Name == "" {
-		t.Name = srcAddr.IP.String()
-	}
-	tMutex.Lock()
-	defer tMutex.Unlock()
-	k := getTransactionKey(srcAddr.IP, trans)
-	transactions[k] = t
+	return t
 }
 
-func recordNewRequest(req *ReportRequest, now time.Time, srcAddr *net.UDPAddr) {
-	startTransaction(req.Trans, srcAddr, now, req.Name)
-	//now create the TripTimes array to include the estimated number of triptimes
-	tMutex.Lock()
-	t, _ := transactions[getTransactionKey(srcAddr.IP, req.Trans)]
-	defer tMutex.Unlock()
-	t.TripTimes = make([]time.Duration, 0, config.Iterations+1)
-	t.Offsets = make([]int64, 0, config.Iterations+1)
-	//store the first offset and we'll calculate the trip time when we get the first response
-	diff := req.Time - now.UnixNano()
+/*
+
+Transactions don't need to have mutexes around their properties since all
+reading/writing for each transaction is single-threaded via the job channel
+
+*/
+func (t *Transaction) Close() {
+	if t.closed {
+		return
+	}
+	t.closed = true
+	close(t.jobCh)
+	t.Untrack()
+}
+
+func (t *Transaction) SetName(name string) {
+	t.Name = name
+	if t.Name == "" {
+		t.Name = t.Addr.IP.String()
+	}
+}
+
+func (t *Transaction) StoreTripTime(d time.Duration) {
+	if t.TripTimes == nil {
+		//now create the TripTimes array to include the estimated number of triptimes
+		t.TripTimes = make([]time.Duration, 0, config.Iterations+1)
+	}
+	t.TripTimes = append(t.TripTimes, d)
+}
+
+func (t *Transaction) StoreOffset(diff int64) {
+	if t.Offsets == nil {
+		//now create the TripTimes array to include the estimated number of triptimes
+		t.Offsets = make([]int64, 0, config.Iterations+1)
+	}
 	t.Offsets = append(t.Offsets, diff)
 }
 
-func correctReply(replyAddr string, srcAddr *net.UDPAddr) (*net.UDPAddr, error) {
-	//determine the addr to send based on the received message
-	destAddr, err := net.ResolveUDPAddr("udp", replyAddr)
-	if err != nil {
-		return nil, err
+func generateTransactionID(ip net.IP) int32 {
+	var n int32
+	var ok bool
+	tMutex.RLock()
+	for {
+		n = rand.Int31()
+		//make sure this ID doesn't already exist
+		if _, ok = transactions[getTransactionKey(ip, n)]; !ok {
+			break
+		}
 	}
-	//if they're listening on all interfaces then use the srcAddr
-	if destAddr.IP.IsUnspecified() {
-		destAddr.IP = srcAddr.IP
-	}
-	return destAddr, nil
+	tMutex.RUnlock()
+	return n
 }
 
-func verifyExistingTransaction(resp *ReportResponse, srcAddr *net.UDPAddr) *Transaction {
-	tMutex.RLock()
-	t, ok := transactions[getTransactionKey(srcAddr.IP, resp.Trans)]
-	defer tMutex.RUnlock()
-	kv := llog.KV{
-		"addr":        srcAddr,
-		"seq":         resp.Seq,
-		"transaction": resp.Trans,
+func (t *Transaction) GenerateID() {
+	t.ID = generateTransactionID(t.Addr.IP)
+}
+
+func (t *Transaction) Track() {
+	if t.ID == 0 {
+		t.GenerateID()
 	}
-	if !ok {
-		llog.Warn("received message for old transaction", kv)
-		return nil
+	tMutex.Lock()
+	transactions[getTransactionKey(t.Addr.IP, t.ID)] = t
+	tMutex.Unlock()
+}
+
+func (t *Transaction) Untrack() {
+	tMutex.Lock()
+	delete(transactions, getTransactionKey(t.Addr.IP, t.ID))
+	tMutex.Unlock()
+}
+
+func (t *Transaction) NewJob(j *Job) {
+	t.jobCh <- j
+}
+
+func (t *Transaction) SeqMatches(seq int32) bool {
+	return t.seq == seq
+}
+
+func (t *Transaction) ReaderSpin() {
+	var n int
+	var src *net.UDPAddr
+	var err error
+	var j *Job
+	buf := make([]byte, BufferSize)
+	for {
+		t.conn.SetReadDeadline(time.Now().Add(time.Second * 10))
+		n, src, err = t.conn.ReadFromUDP(buf)
+		if err != nil {
+			if nerr, _ := err.(net.Error); nerr.Timeout() {
+				//if we timed out then master/slave must've died or we're done
+				break
+			} else if nerr.Temporary() {
+				//its "temporary" so continue
+				continue
+			}
+			llog.Warn("error reading from UDP connection", llog.KV{"err": err})
+			break
+		}
+
+		j, err = DecodeMessage(buf[0:n], src)
+		if err != nil {
+			llog.Warn("error calling DecodeMessage in ReaderSpin", llog.KV{"err": err, "src": src})
+			break
+		}
+		t.NewJob(j)
 	}
-	if !t.IP.Equal(srcAddr.IP) {
-		kv["origAddr"] = t.IP.String()
-		llog.Warn("mid-transaction IP change detected", kv)
-		return nil
+	t.Close()
+}
+
+func (t *Transaction) JobSpin() {
+	var j *Job
+	var p []byte
+	var err error
+	for j = range t.jobCh {
+		if !t.Addr.IP.Equal(j.SrcAddr.IP) {
+			llog.Warn("received job from a mismatched IP", llog.KV{
+				"src":      j.SrcAddr,
+				"expected": t.Addr,
+			})
+			continue
+		}
+
+		//we have to wrap this particular set in a mutex since removeOldTransactions reads this
+		tMutex.Lock()
+		t.LastResponse = time.Now()
+		tMutex.Unlock()
+
+		if j.MType == Init {
+			p, err = getReportBytes(makeReport(time.Now()))
+			if err != nil {
+				llog.Error("error from GetReportBytes", llog.KV{"err": err})
+				break
+			}
+		} else {
+			//increase seq for read
+			t.seq++
+			p = handleJob(j, t)
+			if p == nil {
+				//nothing left to write so this transaction is done
+				break
+			}
+		}
+		t.write(p)
 	}
-	if t.LastSeq+1 != resp.Seq {
-		kv["expectedSeq"] = (t.LastSeq + 1)
-		llog.Warn("mid-transaction seq out of order", kv)
-		return nil
+	t.Close()
+}
+
+func (t *Transaction) write(p []byte) {
+	var err error
+	if t.conn.RemoteAddr() == nil {
+		_, err = t.conn.WriteToUDP(p, t.Addr)
+	} else {
+		_, err = t.conn.Write(p)
 	}
-	return t
+	if err != nil {
+		llog.Error("write error", llog.KV{"err": err, "src": t.Addr})
+		return
+	}
+	//increase seq for write
+	t.seq++
 }

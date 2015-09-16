@@ -3,7 +3,9 @@
 // packages.
 package config
 
-import "github.com/mediocregopher/lever"
+import (
+	"github.com/mediocregopher/lever"
+)
 
 // Configurable variables which are made available
 var (
@@ -11,6 +13,7 @@ var (
 	SkyAPIAddr string
 	MasterAddr string
 	Name       string
+	Interval   int32
 	HMACKey    []byte
 	Iterations int32
 	IsMaster   bool
@@ -48,6 +51,11 @@ func init() {
 		Default:     "5",
 	})
 	l.Add(lever.Param{
+		Name:        "--interval",
+		Description: "The number of seconds to wait between each report.",
+		Default:     "180",
+	})
+	l.Add(lever.Param{
 		Name:        "--threshold",
 		Description: "The threshold in milliseconds for reporting a server",
 		Default:     "5000",
@@ -70,6 +78,8 @@ func init() {
 	HMACKey = []byte(k)
 	i, _ := l.ParamInt("--rounds")
 	Iterations = int32(i)
+	i, _ = l.ParamInt("--interval")
+	Interval = int32(i)
 	i, _ = l.ParamInt("--threshold")
 	Threshold = float64(i)
 	LogLevel, _ = l.ParamStr("--log-level")

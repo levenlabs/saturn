@@ -17,12 +17,11 @@ func main() {
 	if config.IsMaster {
 		llog.Info("starting as master")
 		go advertise()
+		listenSpin()
 	} else {
-		masterAddr := lookupMaster()
-		llog.Info("starting as slave", llog.KV{"master": config.MasterAddr, "addr": masterAddr})
-		go reportSpin()
+		llog.Info("starting as slave", llog.KV{"master": config.MasterAddr})
+		reportSpin()
 	}
-	listenSpin()
 }
 
 func lookupMaster() string {
@@ -68,7 +67,7 @@ func reportSpin() {
 	var masterAddr string
 	var serverAddr *net.UDPAddr
 	var err error
-	for range time.Tick(10 * time.Second) {
+	for range time.Tick(time.Duration(config.Interval) * time.Second) {
 		masterAddr = lookupMaster()
 		serverAddr, err = net.ResolveUDPAddr("udp", masterAddr)
 		if err != nil {
@@ -80,22 +79,36 @@ func reportSpin() {
 }
 
 func listenSpin() {
-	listenAddr, err := net.ResolveUDPAddr("udp", config.ListenAddr)
+	llog.Info("listening on udp", llog.KV{"addr": config.ListenAddr})
+	lAddr, err := net.ResolveUDPAddr("udp", config.ListenAddr)
 	if err != nil {
 		llog.Fatal("error resolving UDP addr", llog.KV{"err": err, "addr": config.ListenAddr})
 	}
-	llog.Info("listening on udp", llog.KV{"addr": config.ListenAddr})
-	conn, err := net.ListenUDP("udp", listenAddr)
+	conn, err := net.ListenUDP("udp", lAddr)
 	if err != nil {
 		llog.Fatal("error listening to UDP port", llog.KV{"err": err, "addr": config.ListenAddr})
 	}
 
-	//todo: currently the average size of udp mesages is ~80 bytes so should we make this smaller?
-	buf := make([]byte, 160)
+	buf := make([]byte, sync.BufferSize)
 	var n int
-	var addr *net.UDPAddr
+	var src *net.UDPAddr
+	var t *sync.Transaction
 	for {
-		n, addr, err = conn.ReadFromUDP(buf)
-		sync.HandleMessage(buf[0:n], addr)
+		n, src, err = conn.ReadFromUDP(buf)
+		if err != nil {
+			llog.Fatal("error reading from UDP port", llog.KV{"err": err})
+		}
+		//we need to make a new job each time since we're sending it over a channel
+		j, err := sync.DecodeMessage(buf[0:n], src)
+		if err != nil {
+			llog.Error("error decoding message", llog.KV{"src": src, "err": err})
+			continue
+		}
+		t = sync.EnsureTransaction(j, conn)
+		if t == nil {
+			llog.Error("error ensuring transaction", llog.KV{"src": src})
+			continue
+		}
+		go t.NewJob(j)
 	}
 }

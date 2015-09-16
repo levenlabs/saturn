@@ -28,9 +28,8 @@ type ReportRequest struct {
 	Time  int64  `protobuf:"varint,1,opt,name=time" json:"time,omitempty"`
 	Name  string `protobuf:"bytes,2,opt,name=name" json:"name,omitempty"`
 	Reply string `protobuf:"bytes,3,opt,name=reply" json:"reply,omitempty"`
-	Trans int32  `protobuf:"varint,4,opt,name=trans" json:"trans,omitempty"`
-	Seq   int32  `protobuf:"varint,5,opt,name=seq" json:"seq,omitempty"`
-	Sig   []byte `protobuf:"bytes,6,opt,name=sig,proto3" json:"sig,omitempty"`
+	Seq   int32  `protobuf:"varint,4,opt,name=seq" json:"seq,omitempty"`
+	Sig   []byte `protobuf:"bytes,5,opt,name=sig,proto3" json:"sig,omitempty"`
 }
 
 func (m *ReportRequest) Reset()         { *m = ReportRequest{} }
