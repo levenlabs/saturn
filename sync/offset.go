@@ -4,7 +4,6 @@ import (
 	"github.com/levenlabs/go-llog"
 	"github.com/levenlabs/saturn/config"
 	"math"
-	"net"
 	"sort"
 	"time"
 )
@@ -41,31 +40,24 @@ func calculateAverageOffset(tripTimes []time.Duration, offsets []int64) float64 
 	return (totalOffsets + (totalTimes / 2)) / count
 }
 
-func calcOffsetForTransaction(ip net.IP, trans int32, name string) {
-	tMutex.RLock()
-	k := getTransactionKey(ip, trans)
-	t, ok := transactions[k]
-	defer tMutex.RUnlock()
-	if !ok {
-		return
-	}
-	iters := math.Ceil(float64(t.LastSeq) / float64(2))
-	if iters == 0 {
-		llog.Error("finalizing transaction with 0 iterations", llog.KV{"trans": trans, "name": name})
+func calcOffsetForTransaction(t *Transaction) {
+	if len(t.TripTimes) == 0 {
+		llog.Error("finalizing transaction with 0 iterations", llog.KV{"src": t.Addr})
 		return
 	}
 	if len(t.TripTimes) != len(t.Offsets) {
 		llog.Error("finalizing transaction with invalid iterations", llog.KV{
 			"trips":   len(t.TripTimes),
 			"offsets": len(t.Offsets),
-			"name":    name,
+			"src":     t.Addr,
 		})
 		return
 	}
 	offsetInMS := calculateAverageOffset(t.TripTimes, t.Offsets)
-	llog.Info("slave offset", llog.KV{"name": name, "offset": offsetInMS})
+	kv := llog.KV{"name": t.Name, "offset": offsetInMS}
+	llog.Info("slave offset", kv)
 
 	if config.Threshold < math.Abs(offsetInMS) {
-		llog.Warn("slave offset is over threshold", llog.KV{"name": name, "offset": offsetInMS})
+		llog.Warn("slave offset is over threshold", kv)
 	}
 }
