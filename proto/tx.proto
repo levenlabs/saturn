@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package proto;
+
+message TxMsg {
+    string id = 1;
+    bytes sig = 2;
+    int32 seq = 3;
+    oneof inner {
+        InitialReport initialReport = 4;
+        Report report = 5;
+    }
+}
+
+message InitialReport {
+  int64 time = 1; // time
+  string name = 2; // name of the sender
+}
+
+message Report {
+  int64 diff = 1; // difference of last Report and our time
+  int64 time = 2; // time
+}

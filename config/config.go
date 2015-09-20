@@ -4,6 +4,7 @@
 package config
 
 import (
+	"github.com/levenlabs/go-llog"
 	"github.com/mediocregopher/lever"
 )
 
@@ -63,7 +64,7 @@ func init() {
 	l.Add(lever.Param{
 		Name:        "--log-level",
 		Description: "Adjust the log level. Valid options are: error, warn, info, debug",
-		Default:     "warn",
+		Default:     "info",
 	})
 	l.Parse()
 
@@ -83,4 +84,6 @@ func init() {
 	i, _ = l.ParamInt("--threshold")
 	Threshold = float64(i)
 	LogLevel, _ = l.ParamStr("--log-level")
+
+	llog.SetLevelFromString(LogLevel)
 }

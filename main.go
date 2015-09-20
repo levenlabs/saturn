@@ -3,17 +3,22 @@ package main
 import (
 	"time"
 
+	"net"
+	"strings"
+
+	"github.com/golang/protobuf/proto"
 	"github.com/levenlabs/go-llog"
 	"github.com/levenlabs/go-srvclient"
 	"github.com/levenlabs/saturn/config"
-	"github.com/levenlabs/saturn/sync"
+	lproto "github.com/levenlabs/saturn/proto"
+	"github.com/levenlabs/saturn/transaction"
 	"github.com/mediocregopher/skyapi/client"
-	"net"
-	"strings"
 )
 
 func main() {
-	llog.SetLevelFromString(config.LogLevel)
+
+	transaction.Init()
+
 	if config.IsMaster {
 		llog.Info("starting as master")
 		go advertise()
@@ -24,7 +29,7 @@ func main() {
 	}
 }
 
-func lookupMaster() string {
+func lookupMaster() *net.UDPAddr {
 	//see if they passed a hostname without a port and then do a srv lookup
 	masterAddr := config.MasterAddr
 	_, _, err := net.SplitHostPort(config.MasterAddr)
@@ -32,10 +37,15 @@ func lookupMaster() string {
 		masterAddr, err = srvclient.SRV(config.MasterAddr)
 		if err != nil {
 			llog.Fatal("error resolving master-addr using srv", llog.KV{"err": err, "addr": config.MasterAddr})
-			return ""
+			return nil
 		}
 	}
-	return masterAddr
+
+	serverAddr, err := net.ResolveUDPAddr("udp", masterAddr)
+	if err != nil {
+		llog.Fatal("error resolving UDP addr", llog.KV{"err": err, "addr": masterAddr})
+	}
+	return serverAddr
 }
 
 func advertise() {
@@ -47,68 +57,135 @@ func advertise() {
 
 		llog.Info("connecting to skyapi", llog.KV{"resolvedAddr": skyapiAddr, "thisAddr": config.ListenAddr})
 
-		go func() {
-			err := client.ProvideOpts(client.Opts{
-				SkyAPIAddr:        skyapiAddr,
-				Service:           "saturn",
-				ThisAddr:          config.ListenAddr,
-				ReconnectAttempts: 3,
-			})
-			llog.Fatal("skyapi giving up reconnecting", llog.KV{
-				"addr":         config.SkyAPIAddr,
-				"resolvedAddr": skyapiAddr,
-				"err":          err,
-			})
-		}()
+		err = client.ProvideOpts(client.Opts{
+			SkyAPIAddr:        skyapiAddr,
+			Service:           "saturn",
+			ThisAddr:          config.ListenAddr,
+			ReconnectAttempts: 3,
+		})
+		llog.Fatal("skyapi giving up reconnecting", llog.KV{
+			"addr":         config.SkyAPIAddr,
+			"resolvedAddr": skyapiAddr,
+			"err":          err,
+		})
 	}
 }
 
+func marshalAndWrite(msg proto.Message, c *net.UDPConn, dst *net.UDPAddr, kv llog.KV) bool {
+	b, err := proto.Marshal(msg)
+	if err != nil {
+		kv["err"] = err
+		llog.Error("error marshaling msg", kv)
+		return false
+	}
+
+	if dst == nil {
+		_, err = c.Write(b)
+	} else {
+		_, err = c.WriteToUDP(b, dst)
+	}
+
+	if err != nil {
+		kv["err"] = err
+		llog.Error("error writing msg", kv)
+		return false
+	}
+	return true
+}
+
+func readAndUnmarshal(c *net.UDPConn, kv llog.KV) (*lproto.TxMsg, *net.UDPAddr, bool) {
+	b := make([]byte, 1024)
+	n, addr, err := c.ReadFromUDP(b)
+	if err != nil {
+		kv["err"] = err
+		llog.Error("error reading from udp socket", kv)
+		return nil, nil, false
+	}
+
+	var msg lproto.TxMsg
+	if err := proto.Unmarshal(b[:n], &msg); err != nil {
+		kv["err"] = err
+		llog.Error("error unmarshaling proto msg", kv)
+		return nil, nil, false
+	}
+	return &msg, addr, true
+}
+
 func reportSpin() {
-	var masterAddr string
-	var serverAddr *net.UDPAddr
-	var err error
-	for range time.Tick(time.Duration(config.Interval) * time.Second) {
-		masterAddr = lookupMaster()
-		serverAddr, err = net.ResolveUDPAddr("udp", masterAddr)
-		if err != nil {
-			llog.Fatal("error resolving UDP addr", llog.KV{"err": err, "addr": masterAddr})
+	doSlaveReport()
+	for _ = range time.Tick(time.Duration(config.Interval) * time.Second) {
+		doSlaveReport()
+	}
+}
+
+func doSlaveReport() {
+	masterAddr := lookupMaster()
+	kv := llog.KV{"addr": masterAddr}
+	llog.Info("beginning transaction", kv)
+
+	c, err := net.DialUDP("udp", nil, masterAddr)
+	if err != nil {
+		kv["err"] = err
+		llog.Error("error connecting to master", kv)
+		return
+	}
+	defer c.Close()
+
+	firstMsg := transaction.Initiate(c.LocalAddr().String())
+	kv["txID"] = firstMsg.Id
+	if !marshalAndWrite(firstMsg, c, nil, kv) {
+		return
+	}
+
+	for {
+		msg, _, ok := readAndUnmarshal(c, kv)
+		if !ok {
+			return
 		}
-		llog.Info("sending report", llog.KV{"addr": serverAddr})
-		sync.SendReport(serverAddr)
+
+		nextMsg := transaction.IncomingMessage(msg)
+		if nextMsg == nil {
+			return
+		}
+		if !marshalAndWrite(nextMsg, c, nil, kv) {
+			return
+		}
 	}
 }
 
 func listenSpin() {
-	llog.Info("listening on udp", llog.KV{"addr": config.ListenAddr})
+	kv := llog.KV{"addr": config.ListenAddr}
+	llog.Info("listening on udp", kv)
 	lAddr, err := net.ResolveUDPAddr("udp", config.ListenAddr)
 	if err != nil {
-		llog.Fatal("error resolving UDP addr", llog.KV{"err": err, "addr": config.ListenAddr})
+		kv["err"] = err
+		llog.Fatal("error resolving UDP addr", kv)
 	}
 	conn, err := net.ListenUDP("udp", lAddr)
 	if err != nil {
-		llog.Fatal("error listening to UDP port", llog.KV{"err": err, "addr": config.ListenAddr})
+		kv["err"] = err
+		llog.Fatal("error listening to UDP port", kv)
 	}
 
-	buf := make([]byte, sync.BufferSize)
-	var n int
-	var src *net.UDPAddr
-	var t *sync.Transaction
 	for {
-		n, src, err = conn.ReadFromUDP(buf)
-		if err != nil {
-			llog.Fatal("error reading from UDP port", llog.KV{"err": err})
-		}
-		//we need to make a new job each time since we're sending it over a channel
-		j, err := sync.DecodeMessage(buf[0:n], src)
-		if err != nil {
-			llog.Error("error decoding message", llog.KV{"src": src, "err": err})
-			continue
-		}
-		t = sync.EnsureTransaction(j, conn)
-		if t == nil {
-			llog.Error("error ensuring transaction", llog.KV{"src": src})
-			continue
-		}
-		go t.NewJob(j)
+		doMasterInner(conn)
 	}
+}
+
+func doMasterInner(c *net.UDPConn) {
+	kv := llog.KV{"addr": config.ListenAddr}
+	msg, remoteAddr, ok := readAndUnmarshal(c, kv)
+	if !ok {
+		llog.Fatal("couldn't read from udp listen socket", kv)
+	}
+
+	kv["txID"] = msg.Id
+	kv["remoteAddr"] = remoteAddr
+
+	nextMsg := transaction.IncomingMessage(msg)
+	if nextMsg == nil {
+		return
+	}
+
+	marshalAndWrite(nextMsg, c, remoteAddr, kv)
 }

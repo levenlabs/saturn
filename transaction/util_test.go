@@ -1,19 +1,21 @@
-package sync
+package transaction
 
 import (
-	"github.com/stretchr/testify/assert"
 	. "testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCalcAvg1(t *T) {
 	d := []time.Duration{
 		time.Duration(2) * time.Millisecond,
 	}
-	o := []int64{
+	o := []time.Duration{
 		1000000,
 	}
-	a := calculateAverageOffset(d, o)
+	a, err := calculateAverageOffset(d, o)
+	assert.Nil(t, err)
 	assert.Equal(t, float64(2), a)
 }
 
@@ -22,11 +24,12 @@ func TestCalcAvg2(t *T) {
 		time.Duration(1) * time.Millisecond,
 		time.Duration(1) * time.Millisecond,
 	}
-	o := []int64{
+	o := []time.Duration{
 		1000000,
 		1000000,
 	}
-	a := calculateAverageOffset(d, o)
+	a, err := calculateAverageOffset(d, o)
+	assert.Nil(t, err)
 	assert.Equal(t, float64(1.5), a)
 }
 
@@ -37,11 +40,12 @@ func TestCalcAvg3(t *T) {
 		time.Duration(1) * time.Millisecond,
 		time.Duration(2) * time.Millisecond,
 	}
-	o := []int64{
+	o := []time.Duration{
 		1000000,
 		1000000,
 		9000000,
 	}
-	a := calculateAverageOffset(d, o)
+	a, err := calculateAverageOffset(d, o)
+	assert.Nil(t, err)
 	assert.Equal(t, float64(1.5), a)
 }
