@@ -64,7 +64,7 @@ func init() {
 	l.Add(lever.Param{
 		Name:        "--log-level",
 		Description: "Adjust the log level. Valid options are: error, warn, info, debug",
-		Default:     "info",
+		Default:     "warn",
 	})
 	l.Parse()
 

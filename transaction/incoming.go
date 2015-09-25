@@ -40,12 +40,16 @@ func incoming(transactions map[string]*tx, msg *lproto.TxMsg) *lproto.TxMsg {
 
 	t := transactions[msg.Id]
 	if t != nil && t.expectedSeq != msg.Seq {
+		kv["txExpectedSeq"] = t.expectedSeq
+		kv["txReceivedSeq"] = msg.Seq
+		llog.Warn("received message with wrong seq", kv)
 		return nil
 	}
 
+	nextSeq := msg.Seq + 1
 	retTx := &lproto.TxMsg{
 		Id:  msg.Id,
-		Seq: msg.Seq + 1,
+		Seq: nextSeq,
 	}
 
 	var hasInner bool
@@ -70,7 +74,9 @@ func incoming(transactions map[string]*tx, msg *lproto.TxMsg) *lproto.TxMsg {
 	// We re-get t because the transaction might not have existed when t was
 	// created, although it definitely exists now
 	t = transactions[msg.Id]
-	t.expectedSeq = msg.Seq + 2
+	// Add 2 here since the next seq should be the next incoming one which is
+	// one greater than the one we just sent
+	t.expectedSeq = nextSeq + 1
 	t.lastMessage = time.Now()
 
 	retTx.Sign()
@@ -116,7 +122,6 @@ func handleIncomingReport(t *tx, rep *lproto.Report) (*lproto.TxMsg_Report, bool
 			kv := t.kv()
 			kv["offset"] = offset
 			kv["txNumTrips"] = len(t.tripTimes)
-			kv["txNumOffsets"] = len(t.offsets)
 
 			if err != nil {
 				kv["err"] = err
