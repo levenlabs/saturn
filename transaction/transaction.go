@@ -52,7 +52,7 @@ func txSpin() {
 		case im := <-incomingMsgCh:
 			im.replyCh <- incoming(transactions, im.msg)
 		case it := <-initiateTxCh:
-			it.replyCh <- initiate(transactions, it.idStr)
+			it.replyCh <- initiate(transactions, it.idStr, it.srcIP)
 		case <-cleanTick:
 			cleanTxs(transactions)
 		}

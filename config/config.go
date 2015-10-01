@@ -53,7 +53,7 @@ func init() {
 	})
 	l.Add(lever.Param{
 		Name:        "--interval",
-		Description: "The number of seconds to wait between each report.",
+		Description: "The number of seconds to wait between each report. Should be at least 10 seconds.",
 		Default:     "180",
 	})
 	l.Add(lever.Param{

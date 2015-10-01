@@ -18,7 +18,7 @@ func TestIncoming(t *T) {
 
 	t.Log("initializing tx as slave")
 	config.IsMaster = false
-	initReport := initiate(slaveTxs, testutil.RandStr())
+	initReport := initiate(slaveTxs, testutil.RandStr(), "")
 
 	t.Log("sending slave's initial report to master")
 	config.IsMaster = true

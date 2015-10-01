@@ -95,10 +95,17 @@ func marshalAndWrite(msg proto.Message, c *net.UDPConn, dst *net.UDPAddr, kv llo
 
 func readAndUnmarshal(c *net.UDPConn, kv llog.KV) (*lproto.TxMsg, *net.UDPAddr, bool) {
 	b := make([]byte, 1024)
+	c.SetReadDeadline(time.Now().Add(time.Second * 5))
 	n, addr, err := c.ReadFromUDP(b)
 	if err != nil {
-		kv["err"] = err
-		llog.Error("error reading from udp socket", kv)
+		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+			//until we have a end packet, the slave just times out to end the transaction
+			//if the master times out we are already logging in doMasterInner
+			llog.Debug("timed out reading from udp socket", kv)
+		} else {
+			kv["err"] = err
+			llog.Error("error reading from udp socket", kv)
+		}
 		return nil, nil, false
 	}
 
@@ -122,6 +129,7 @@ func doSlaveReport() {
 	masterAddr := lookupMaster()
 	kv := llog.KV{"addr": masterAddr}
 	llog.Info("beginning transaction", kv)
+	defer llog.Info("ended transaction", kv)
 
 	c, err := net.DialUDP("udp", nil, masterAddr)
 	if err != nil {
@@ -131,12 +139,17 @@ func doSlaveReport() {
 	}
 	defer c.Close()
 
-	firstMsg := transaction.Initiate(c.LocalAddr().String())
+	// We're using the localAddr as the prefix for the transaction ID
+	addrStr := c.LocalAddr().String()
+	ipStr, _, _ := net.SplitHostPort(addrStr)
+	firstMsg := transaction.Initiate(addrStr, ipStr)
 	kv["txID"] = firstMsg.Id
 	if !marshalAndWrite(firstMsg, c, nil, kv) {
 		return
 	}
 
+	//todo: instead of relying on read timing out to know when the transaction
+	//is done, we should be having the master send a "end" packet
 	for {
 		msg, _, ok := readAndUnmarshal(c, kv)
 		if !ok {

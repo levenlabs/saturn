@@ -13,7 +13,7 @@ func TestInitiate(t *T) {
 	config.Name = testutil.RandStr()
 	transactions := map[string]*tx{}
 
-	msg := initiate(transactions, testutil.RandStr())
+	msg := initiate(transactions, testutil.RandStr(), "")
 
 	assert.Equal(t, int32(1), msg.Seq)
 	assert.Equal(t, config.Name, msg.GetInitialReport().Name)
@@ -24,4 +24,12 @@ func TestInitiate(t *T) {
 	assert.Equal(t, msg.Id, tx.id)
 	assert.Equal(t, config.Name, tx.name)
 	assert.Equal(t, int32(2), tx.expectedSeq)
+
+	config.Name = ""
+	msg = initiate(transactions, testutil.RandStr(), "fallback")
+	assert.Equal(t, "fallback", msg.GetInitialReport().Name)
+
+	tx, ok = transactions[msg.Id]
+	require.True(t, ok)
+	assert.Equal(t, "fallback", tx.name)
 }

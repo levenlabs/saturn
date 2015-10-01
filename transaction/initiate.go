@@ -15,10 +15,13 @@ import (
 //
 // idStr should be a string that's semi-unique to the connection the transaction
 // is being made over. The local "ip:port" of the connection is recommended
-func Initiate(idStr string) *lproto.TxMsg {
+// srcIP should be the ip that we are sending packets from. It is used in place
+// of a name if no name was supplied in config.
+func Initiate(idStr string, srcIP string) *lproto.TxMsg {
 	it := initiateTx{
 		replyCh: make(chan *lproto.TxMsg),
 		idStr:   idStr,
+		srcIP:   srcIP,
 	}
 	initiateTxCh <- it
 	return <-it.replyCh
@@ -27,6 +30,7 @@ func Initiate(idStr string) *lproto.TxMsg {
 type initiateTx struct {
 	replyCh chan *lproto.TxMsg
 	idStr   string
+	srcIP   string
 }
 
 var initiateTxCh = make(chan initiateTx)
@@ -39,17 +43,21 @@ func newTxID(idStr string) string {
 	return idStr + "_" + hex.EncodeToString(b)
 }
 
-func initiate(transactions map[string]*tx, idStr string) *lproto.TxMsg {
+func initiate(transactions map[string]*tx, idStr string, srcIP string) *lproto.TxMsg {
 	id := newTxID(idStr)
-	t := newTx(transactions, id, config.Name)
+	name := config.Name
+	if name == "" {
+		name = srcIP
+	}
+	t := newTx(transactions, id, name)
 	t.expectedSeq = 2
 
 	tx := &lproto.TxMsg{
-		Id:  id,
+		Id:  t.id,
 		Seq: 1,
 		Inner: &lproto.TxMsg_InitialReport{&lproto.InitialReport{
 			Time: time.Now().UnixNano(),
-			Name: config.Name,
+			Name: t.name,
 		}},
 	}
 	tx.Sign()
