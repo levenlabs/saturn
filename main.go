@@ -95,12 +95,11 @@ func marshalAndWrite(msg proto.Message, c *net.UDPConn, dst *net.UDPAddr, kv llo
 
 func readAndUnmarshal(c *net.UDPConn, kv llog.KV) (*lproto.TxMsg, *net.UDPAddr, bool) {
 	b := make([]byte, 1024)
-	c.SetReadDeadline(time.Now().Add(time.Second * 5))
 	n, addr, err := c.ReadFromUDP(b)
 	if err != nil {
 		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
-			//until we have a end packet, the slave just times out to end the transaction
-			//if the master times out we are already logging in doMasterInner
+			// right now only the slave sets a ReadDeadline, but that's
+			// expected so just debug
 			llog.Debug("timed out reading from udp socket", kv)
 		} else {
 			kv["err"] = err
@@ -148,9 +147,12 @@ func doSlaveReport() {
 		return
 	}
 
-	//todo: instead of relying on read timing out to know when the transaction
-	//is done, we should be having the master send a "end" packet
+	// Todo: instead of relying on read timing out to know when the transaction
+	// is done, we should be having the master send a "end" packet
 	for {
+		// Set a ReadDeadline so we don't wait forever if the master is dead or
+		// ended the transaction
+		c.SetReadDeadline(time.Now().Add(time.Second * 5))
 		msg, _, ok := readAndUnmarshal(c, kv)
 		if !ok {
 			return
@@ -187,6 +189,7 @@ func listenSpin() {
 
 func doMasterInner(c *net.UDPConn) {
 	kv := llog.KV{"addr": config.ListenAddr}
+	//don't set a ReadDeadline since we want it to block until a message
 	msg, remoteAddr, ok := readAndUnmarshal(c, kv)
 	if !ok {
 		llog.Fatal("couldn't read from udp listen socket", kv)
