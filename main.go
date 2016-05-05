@@ -1,10 +1,12 @@
 package main
 
 import (
-	"time"
-
 	"net"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/levenlabs/go-llog"
@@ -106,8 +108,16 @@ func readAndUnmarshal(c *net.UDPConn, kv llog.KV) (*lproto.TxMsg, *net.UDPAddr, 
 
 func reportSpin() {
 	doSlaveReport()
-	for _ = range time.Tick(time.Duration(config.Interval) * time.Second) {
-		doSlaveReport()
+	tick := time.Tick(time.Duration(config.Interval) * time.Second)
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGHUP)
+	for {
+		select {
+		case <-sig:
+			doSlaveReport()
+		case <-tick:
+			doSlaveReport()
+		}
 	}
 }
 
