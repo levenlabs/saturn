@@ -131,6 +131,7 @@ func doSlaveReport() {
 	firstMsg := transaction.Initiate(addrStr, ipStr)
 	kv["txID"] = firstMsg.Id
 	if !marshalAndWrite(firstMsg, c, nil, kv) {
+		// logging happened in marshalAndWrite
 		return
 	}
 
@@ -139,14 +140,17 @@ func doSlaveReport() {
 		c.SetReadDeadline(time.Now().Add(time.Second * 5))
 		msg, _, ok := readAndUnmarshal(c, kv)
 		if !ok {
+			// logging happned in readAndUnmarshal
 			return
 		}
 
 		nextMsg := transaction.IncomingMessage(msg)
 		if nextMsg == nil {
+			llog.Debug("no nextMsg, closing udp", kv)
 			return
 		}
 		if !marshalAndWrite(nextMsg, c, nil, kv) {
+			// logging happened in marshalAndWrite
 			return
 		}
 	}
@@ -182,13 +186,15 @@ func doMasterInner(c *net.UDPConn) {
 	kv["txID"] = msg.Id
 	kv["remoteAddr"] = remoteAddr
 
-	llog.Debug("handling incoming message", kv)
+	llog.Debug("handling master incoming message", kv)
 
 	nextMsg := transaction.IncomingMessage(msg)
 	if nextMsg == nil {
 		llog.Error("no nextMsg but this should never happen as master", kv)
 		return
 	}
+
+	llog.Debug("writing back out master nextMsg", kv)
 
 	marshalAndWrite(nextMsg, c, remoteAddr, kv)
 }
