@@ -22,6 +22,8 @@ func (m *TxMsg) getSig() []byte {
 	case *TxMsg_Report:
 		fmt.Fprint(mac, r.Report.Diff)
 		fmt.Fprint(mac, r.Report.Time)
+	case *TxMsg_Fin:
+		fmt.Fprint(mac, r.Fin.Offset)
 	default:
 		llog.Error("received invalid report inner")
 	}

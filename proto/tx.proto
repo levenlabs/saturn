@@ -9,6 +9,7 @@ message TxMsg {
     oneof inner {
         InitialReport initialReport = 4;
         Report report = 5;
+        Fin fin = 6;
     }
 }
 
@@ -20,4 +21,9 @@ message InitialReport {
 message Report {
   int64 diff = 1; // difference of last Report and our time
   int64 time = 2; // time
+}
+
+message Fin {
+  double offset = 1; // the final calculated offset
+  string error = 2; // if there was an error calculating the offset
 }

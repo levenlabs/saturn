@@ -71,5 +71,21 @@ func TestIncoming(t *T) {
 	t.Log("sending slave's final report to master")
 	config.IsMaster = true
 	msg5 := incoming(masterTxs, msg4)
-	assert.Nil(t, msg5)
+	assert.NotNil(t, msg5)
+
+	assert.Equal(t, msg4.Id, msg5.Id)
+	assert.Equal(t, msg4.Seq+1, msg5.Seq)
+	assert.True(t, msg5.Verify())
+	assert.NotNil(t, msg5.GetFin())
+
+	// make sure the master transaction is cleaned up
+	assert.NotContains(t, msg4.Id, masterTxs)
+
+	t.Log("sending master fin to slave")
+	config.IsMaster = false
+	msg6 := incoming(slaveTxs, msg5)
+	require.Nil(t, msg6)
+
+	// make sure the slave transaction is cleaned up
+	assert.NotContains(t, msg5.Id, slaveTxs)
 }

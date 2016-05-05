@@ -25,7 +25,7 @@ import (
 	"github.com/levenlabs/saturn/config"
 )
 
-// To be called in order to start any necessary go-routines needed for this
+// Init is called in order to start any necessary go-routines needed for this
 // package to work
 func Init() {
 	// This is not automatically called (like init), and we want it that way so
@@ -67,6 +67,11 @@ func cleanTxs(transactions map[string]*tx) {
 		}
 		delete(transactions, k)
 	}
+}
+
+// this function is not thread-safe
+func cleanTx(transactions map[string]*tx, id string) {
+	delete(transactions, id)
 }
 
 // newTx creates a new tx struct for a transaction with the given remote

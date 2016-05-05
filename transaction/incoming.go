@@ -54,21 +54,39 @@ func incoming(transactions map[string]*tx, msg *lproto.TxMsg) *lproto.TxMsg {
 
 	var hasInner bool
 	if r := msg.GetInitialReport(); r != nil {
-		retTx.Inner, hasInner = handleIncomingInitialReport(transactions, msg.Id, r)
+		retTx.Inner = handleIncomingInitialReport(transactions, msg.Id, r)
+		hasInner = true
 
 	} else if r := msg.GetReport(); r != nil {
 		if t == nil {
 			llog.Warn("received Report for unknown transaction", kv)
 			return nil
 		}
-		retTx.Inner, hasInner = handleIncomingReport(t, r)
+		iR, iF := handleIncomingReport(t, r)
+		if iR != nil {
+			retTx.Inner = iR
+		} else {
+			retTx.Inner = iF
+			// since this is a fin, we can destroy this transaction after
+			// writing
+			defer func() {
+				cleanTx(transactions, t.id)
+			}()
+		}
+		hasInner = true
+
+	} else if f := msg.GetFin(); f != nil {
+		if t == nil {
+			llog.Warn("received Fin for unknown transaction", kv)
+			return nil
+		}
+		handleFin(transactions, t, f)
 
 	} else {
 		llog.Warn("received unknown proto.Message type", kv)
 	}
 
 	if !hasInner {
-		llog.Debug("no response to send, ending transaction", kv)
 		return nil
 	}
 
@@ -86,7 +104,7 @@ func incoming(transactions map[string]*tx, msg *lproto.TxMsg) *lproto.TxMsg {
 
 // This will only occur on the master's side, the slave will only ever be
 // sending an initial report, never receiving one
-func handleIncomingInitialReport(transactions map[string]*tx, id string, rep *lproto.InitialReport) (*lproto.TxMsg_Report, bool) {
+func handleIncomingInitialReport(transactions map[string]*tx, id string, rep *lproto.InitialReport) *lproto.TxMsg_Report {
 	t := newTx(transactions, id, rep.Name)
 
 	now := time.Now()
@@ -98,13 +116,15 @@ func handleIncomingInitialReport(transactions map[string]*tx, id string, rep *lp
 	//first report
 	t.offsets = append(t.offsets, diff)
 
-	return &lproto.TxMsg_Report{&lproto.Report{
-		Diff: int64(diff),
-		Time: now.UnixNano(),
-	}}, true
+	return &lproto.TxMsg_Report{
+		Report: &lproto.Report{
+			Diff: int64(diff),
+			Time: now.UnixNano(),
+		},
+	}
 }
 
-func handleIncomingReport(t *tx, rep *lproto.Report) (*lproto.TxMsg_Report, bool) {
+func handleIncomingReport(t *tx, rep *lproto.Report) (*lproto.TxMsg_Report, *lproto.TxMsg_Fin) {
 	now := time.Now()
 	diff := time.Duration(rep.Time - now.UnixNano())
 	kv := t.kv()
@@ -124,17 +144,23 @@ func handleIncomingReport(t *tx, rep *lproto.Report) (*lproto.TxMsg_Report, bool
 		//only the master can terminate a sequence
 		if (t.expectedSeq / 2) >= config.Iterations {
 			offset, err := calculateAverageOffset(t.tripTimes, t.offsets)
+			fin := &lproto.Fin{}
 			if err != nil {
+				fin.Error = err.Error()
 				kv["err"] = err
 				llog.Error("error calculating avg offset", kv)
 			} else {
+				fin.Offset = offset
 				kv["offset"] = offset
 				llog.Info("slave offset", kv)
 				if config.Threshold < math.Abs(offset) {
 					llog.Warn("slave offset is over threshold", kv)
 				}
 			}
-			return nil, false
+			llog.Debug("over iterations, ending transaction", kv)
+			return nil, &lproto.TxMsg_Fin{
+				Fin: fin,
+			}
 		}
 	}
 
@@ -143,5 +169,15 @@ func handleIncomingReport(t *tx, rep *lproto.Report) (*lproto.TxMsg_Report, bool
 			Diff: int64(diff),
 			Time: now.UnixNano(),
 		},
-	}, true
+	}, nil
+}
+
+func handleFin(transactions map[string]*tx, t *tx, fin *lproto.Fin) {
+	kv := t.kv()
+	kv["offset"] = fin.Offset
+	kv["error"] = fin.Error
+	llog.Debug("received fin", kv)
+	// we received a fin so don't respond with anything and cleanup
+	// transaction
+	cleanTx(transactions, t.id)
 }
