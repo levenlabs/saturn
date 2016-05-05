@@ -8,6 +8,8 @@ import (
 	"github.com/levenlabs/saturn/config"
 )
 
+//go:generate sh -c "protoc --go_out=. *.proto"
+
 func (m *TxMsg) getSig() []byte {
 	mac := hmac.New(sha256.New, config.HMACKey)
 	fmt.Fprint(mac, m.Id)

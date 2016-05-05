@@ -42,7 +42,7 @@ in the `proto` file.
 
 To generate new go files based on the proto files run:
 ```
-protoc --go_out=. proto/report.proto proto/response.proto
+go generate ./...
 ```
 
 ## Example Offset Calculation
