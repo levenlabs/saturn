@@ -90,7 +90,7 @@ func newTx(transactions map[string]*tx, id, name string) *tx {
 
 func (t *tx) kv() llog.KV {
 	return llog.KV{
-		"txID":          t.id,
-		"clientName":        t.name,
+		"txID":       t.id,
+		"clientName": t.name,
 	}
 }
