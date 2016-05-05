@@ -49,26 +49,19 @@ func lookupMaster() *net.UDPAddr {
 }
 
 func advertise() {
-	if config.SkyAPIAddr != "" {
-		skyapiAddr, err := srvclient.SRV(config.SkyAPIAddr)
-		if err != nil {
-			llog.Fatal("error resolving skyapi-addr", llog.KV{"err": err, "addr": config.SkyAPIAddr})
-		}
-
-		llog.Info("connecting to skyapi", llog.KV{"resolvedAddr": skyapiAddr, "thisAddr": config.ListenAddr})
-
-		err = client.ProvideOpts(client.Opts{
-			SkyAPIAddr:        skyapiAddr,
-			Service:           "saturn",
-			ThisAddr:          config.ListenAddr,
-			ReconnectAttempts: 3,
-		})
-		llog.Fatal("skyapi giving up reconnecting", llog.KV{
-			"addr":         config.SkyAPIAddr,
-			"resolvedAddr": skyapiAddr,
-			"err":          err,
-		})
+	if config.SkyAPIAddr == "" {
+		return
 	}
+	kv := llog.KV{"skyapiAddr": config.SkyAPIAddr, "listenAddr": config.ListenAddr}
+	llog.Info("connecting to skyapi", kv)
+
+	kv["err"] = client.ProvideOpts(client.Opts{
+		SkyAPIAddr:        config.SkyAPIAddr,
+		Service:           "saturn",
+		ThisAddr:          config.ListenAddr,
+		ReconnectAttempts: -1,
+	})
+	llog.Fatal("skyapi giving up reconnecting", kv)
 }
 
 func marshalAndWrite(msg proto.Message, c *net.UDPConn, dst *net.UDPAddr, kv llog.KV) bool {
