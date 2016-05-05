@@ -4,8 +4,10 @@
 package config
 
 import (
+	"fmt"
 	"github.com/levenlabs/go-llog"
 	"github.com/mediocregopher/lever"
+	"os"
 )
 
 // Configurable variables which are made available
@@ -20,6 +22,7 @@ var (
 	IsMaster   bool
 	Threshold  float64
 	LogLevel   string
+	version    string
 )
 
 func init() {
@@ -66,7 +69,21 @@ func init() {
 		Description: "Adjust the log level. Valid options are: error, warn, info, debug",
 		Default:     "warn",
 	})
+	if version != "" {
+		l.Add(lever.Param{
+			Name:        "--version",
+			Aliases:     []string{"-v"},
+			Description: "Print version info",
+			Flag:        true,
+		})
+	}
 	l.Parse()
+
+	if l.ParamFlag("--version") {
+		fmt.Println(version)
+		os.Exit(0)
+		return
+	}
 
 	ListenAddr, _ = l.ParamStr("--listen-addr")
 	SkyAPIAddr, _ = l.ParamStr("--skyapi-addr")

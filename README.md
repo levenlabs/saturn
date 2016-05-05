@@ -45,6 +45,14 @@ To generate new go files based on the proto files run:
 go generate ./...
 ```
 
+## Version
+
+The running saturn with `--version` prints the version number. This is only
+supported in releases unless you set the version when compiling:
+```
+go build -ldflags "-X github.com/levenlabs/saturn/config.version 'myversion'" ./...
+```
+
 ## Example Offset Calculation
 
 ```
