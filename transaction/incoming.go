@@ -68,6 +68,7 @@ func incoming(transactions map[string]*tx, msg *lproto.TxMsg) *lproto.TxMsg {
 	}
 
 	if !hasInner {
+		llog.Debug("no response to send, ending transaction", kv)
 		return nil
 	}
 
@@ -90,6 +91,8 @@ func handleIncomingInitialReport(transactions map[string]*tx, id string, rep *lp
 
 	now := time.Now()
 	diff := time.Duration(rep.Time - now.UnixNano())
+	kv := t.kv()
+	llog.Debug("incoming initial report", kv, llog.KV{"isMaster": config.IsMaster})
 
 	//store the first offset and we'll calculate the trip time when we get the
 	//first report
@@ -104,6 +107,8 @@ func handleIncomingInitialReport(transactions map[string]*tx, id string, rep *lp
 func handleIncomingReport(t *tx, rep *lproto.Report) (*lproto.TxMsg_Report, bool) {
 	now := time.Now()
 	diff := time.Duration(rep.Time - now.UnixNano())
+	kv := t.kv()
+	llog.Debug("incoming report", kv, llog.KV{"isMaster": config.IsMaster})
 
 	if config.IsMaster {
 		//if this is the 3rd packet then we need to include the RTT for the first offest
@@ -112,10 +117,7 @@ func handleIncomingReport(t *tx, rep *lproto.Report) (*lproto.TxMsg_Report, bool
 		}
 		t.tripTimes = append(t.tripTimes, now.Sub(t.lastMessage))
 		t.offsets = append(t.offsets, diff)
-
-		kv := t.kv()
 		kv["txNumTrips"] = len(t.tripTimes)
-		llog.Debug("incoming report", kv, llog.KV{"expectedSeq": t.expectedSeq})
 
 		//first trip is free and then each iteration is 2 trips
 		//seq starts at 1 so after 1 iteration it'll be at 3

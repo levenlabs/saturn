@@ -191,6 +191,8 @@ func doMasterInner(c *net.UDPConn) {
 	kv["txID"] = msg.Id
 	kv["remoteAddr"] = remoteAddr
 
+	llog.Debug("handling incoming message", kv)
+
 	nextMsg := transaction.IncomingMessage(msg)
 	if nextMsg == nil {
 		return
