@@ -35,6 +35,24 @@ func (m *TxMsg) Sign() {
 	m.Sig = m.getSig()
 }
 
+// Valid returns if the TxMsg is valid and has a known Inner
+// this is used to ignore messages from newer/older versions
+func (m *TxMsg) Valid() bool {
+	if m.Id == "" {
+		return false
+	}
+	var known bool
+	switch m.GetInner().(type) {
+	case *TxMsg_InitialReport:
+		known = true
+	case *TxMsg_Report:
+		known = true
+	case *TxMsg_Fin:
+		known = true
+	}
+	return known
+}
+
 // Verify makes sure that the signature matches what we calculate it to be
 func (m *TxMsg) Verify() bool {
 	return hmac.Equal(m.getSig(), m.Sig)

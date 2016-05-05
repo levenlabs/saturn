@@ -33,6 +33,10 @@ func incoming(transactions map[string]*tx, msg *lproto.TxMsg) *lproto.TxMsg {
 	kv := llog.KV{
 		"msg": msg,
 	}
+	if !msg.Valid() {
+		llog.Warn("received invalid message (possibly from a newer version?)", kv)
+		return nil
+	}
 	if !msg.Verify() {
 		llog.Warn("received incorrectly signed message", kv)
 		return nil
