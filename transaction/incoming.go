@@ -113,20 +113,20 @@ func handleIncomingReport(t *tx, rep *lproto.Report) (*lproto.TxMsg_Report, bool
 		t.tripTimes = append(t.tripTimes, now.Sub(t.lastMessage))
 		t.offsets = append(t.offsets, diff)
 
+		kv := t.kv()
+		kv["txNumTrips"] = len(t.tripTimes)
+		llog.Debug("incoming report", kv, llog.KV{"expectedSeq": t.expectedSeq})
+
 		//first trip is free and then each iteration is 2 trips
 		//seq starts at 1 so after 1 iteration it'll be at 3
 		//only the master can terminate a sequence
 		if (t.expectedSeq / 2) >= config.Iterations {
 			offset, err := calculateAverageOffset(t.tripTimes, t.offsets)
-
-			kv := t.kv()
-			kv["offset"] = offset
-			kv["txNumTrips"] = len(t.tripTimes)
-
 			if err != nil {
 				kv["err"] = err
 				llog.Error("error calculating avg offset", kv)
 			} else {
+				kv["offset"] = offset
 				llog.Info("slave offset", kv)
 				if config.Threshold < math.Abs(offset) {
 					llog.Warn("slave offset is over threshold", kv)
@@ -136,8 +136,10 @@ func handleIncomingReport(t *tx, rep *lproto.Report) (*lproto.TxMsg_Report, bool
 		}
 	}
 
-	return &lproto.TxMsg_Report{&lproto.Report{
-		Diff: int64(diff),
-		Time: now.UnixNano(),
-	}}, true
+	return &lproto.TxMsg_Report{
+		Report: &lproto.Report{
+			Diff: int64(diff),
+			Time: now.UnixNano(),
+		},
+	}, true
 }

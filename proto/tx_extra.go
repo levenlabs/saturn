@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 
+	"github.com/levenlabs/go-llog"
 	"github.com/levenlabs/saturn/config"
 )
 
@@ -21,14 +22,18 @@ func (m *TxMsg) getSig() []byte {
 	case *TxMsg_Report:
 		fmt.Fprint(mac, r.Report.Diff)
 		fmt.Fprint(mac, r.Report.Time)
+	default:
+		llog.Error("received invalid report inner")
 	}
 	return mac.Sum(nil)
 }
 
+// Sign signs this message
 func (m *TxMsg) Sign() {
 	m.Sig = m.getSig()
 }
 
+// Verify makes sure that the signature matches what we calculate it to be
 func (m *TxMsg) Verify() bool {
 	return hmac.Equal(m.getSig(), m.Sig)
 }
