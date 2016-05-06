@@ -170,8 +170,9 @@ func handleIncomingReport(t *tx, rep *lproto.Report) (*lproto.TxMsg_Report, *lpr
 			} else {
 				fin.Offset = offset
 				kv["offset"] = offset
-				llog.Info("slave offset", kv)
-				if config.Threshold < math.Abs(offset) {
+				absOff := math.Abs(offset)
+				llog.Info("slave offset", kv, llog.KV{"absOffset": absOff})
+				if config.Threshold < absOff {
 					llog.Warn("slave offset is over threshold", kv)
 				}
 			}
