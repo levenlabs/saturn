@@ -26,8 +26,7 @@ func main() {
 		llog.Info("listening on udp", kv)
 		lAddr, err := net.ResolveUDPAddr("udp", config.ListenAddr)
 		if err != nil {
-			kv["err"] = err
-			llog.Fatal("error resolving UDP addr", kv)
+			llog.Fatal("error resolving UDP addr", kv.Set("err", err))
 		}
 
 		go advertise()
@@ -67,15 +66,13 @@ func advertise() {
 func marshalAndWrite(msg proto.Message, c *net.UDPConn, dst *net.UDPAddr, kv llog.KV) bool {
 	b, err := proto.Marshal(msg)
 	if err != nil {
-		kv["err"] = err
-		llog.Error("error marshaling msg", kv)
+		llog.Error("error marshaling msg", kv.Set("err", err))
 		return false
 	}
 
 	_, err = c.WriteToUDP(b, dst)
 	if err != nil {
-		kv["err"] = err
-		llog.Error("error writing msg", kv)
+		llog.Error("error writing msg", kv.Set("err", err))
 		return false
 	}
 	return true
@@ -85,15 +82,13 @@ func readAndUnmarshal(c *net.UDPConn, kv llog.KV) (*lproto.TxMsg, *net.UDPAddr, 
 	b := make([]byte, 1024)
 	n, addr, err := c.ReadFromUDP(b)
 	if err != nil {
-		kv["err"] = err
-		llog.Error("error reading from udp socket", kv)
+		llog.Error("error reading from udp socket", kv.Set("err", err))
 		return nil, nil, false
 	}
 
 	var msg lproto.TxMsg
 	if err := proto.Unmarshal(b[:n], &msg); err != nil {
-		kv["err"] = err
-		llog.Error("error unmarshaling proto msg", kv)
+		llog.Error("error unmarshaling proto msg", kv.Set("err", err))
 		// even though we had an error unmarshalling, it could just be bogus
 		// traffic
 		return nil, nil, true
@@ -130,15 +125,13 @@ func doSlaveReport(masterAddr *net.UDPAddr) bool {
 	// it doesn't really matter what port we listen for
 	lAddr, err := net.ResolveUDPAddr("udp", ":0")
 	if err != nil {
-		kv["err"] = err
-		llog.Fatal("error resolving report listen UDP addr", kv)
+		llog.Fatal("error resolving report listen UDP addr", kv.Set("err", err))
 		return false
 	}
 
 	c, err := net.ListenUDP("udp", lAddr)
 	if err != nil {
-		kv["err"] = err
-		llog.Error("error connecting to master", kv)
+		llog.Error("error connecting to master", kv.Set("err", err))
 		return false
 	}
 	defer c.Close()
@@ -187,8 +180,7 @@ func listenSpin(lAddr *net.UDPAddr, stopCh chan interface{}) {
 	kv := llog.KV{"addr": lAddr.String()}
 	conn, err := net.ListenUDP("udp", lAddr)
 	if err != nil {
-		kv["err"] = err
-		llog.Fatal("error listening to UDP port", kv)
+		llog.Fatal("error listening to UDP port", kv.Set("err", err))
 	}
 	for {
 		select {

@@ -166,8 +166,7 @@ func handleIncomingReport(t *tx, rep *lproto.Report) (*lproto.TxMsg_Report, *lpr
 			fin := &lproto.Fin{}
 			if err != nil {
 				fin.Error = err.Error()
-				kv["err"] = err
-				llog.Error("error calculating avg offset", kv)
+				llog.Error("error calculating avg offset", kv.Set("err", err))
 			} else {
 				fin.Offset = offset
 				kv["offset"] = offset
