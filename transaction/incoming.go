@@ -11,35 +11,44 @@ import (
 
 // IncomingMessage takes a message just received from the remote address and
 // processes it. It may return a message which should be sent back to the
-// remote, or it may return nil
-func IncomingMessage(msg *lproto.TxMsg) *lproto.TxMsg {
+// remote, or it may return nil. It also returns bool signaling to end
+// the transaction if true.
+func IncomingMessage(msg *lproto.TxMsg) (*lproto.TxMsg, bool) {
 	im := incomingMsg{
 		msg:     msg,
-		replyCh: make(chan *lproto.TxMsg),
+		replyCh: make(chan incomingReply),
 	}
 	incomingMsgCh <- im
-	return <-im.replyCh
+	r := <-im.replyCh
+	return r.nextMsg, r.end
 }
 
 type incomingMsg struct {
 	msg     *lproto.TxMsg
-	replyCh chan *lproto.TxMsg
+	replyCh chan incomingReply
+}
+
+type incomingReply struct {
+	nextMsg *lproto.TxMsg
+	end     bool
 }
 
 var incomingMsgCh = make(chan incomingMsg)
 
-func incoming(transactions map[string]*tx, msg *lproto.TxMsg) *lproto.TxMsg {
+// returns the next message, if any, and a bool indiciating if the transaction
+// should be considered ended or not
+func incoming(transactions map[string]*tx, msg *lproto.TxMsg) (*lproto.TxMsg, bool) {
 
 	kv := llog.KV{
 		"msg": msg,
 	}
 	if !msg.Valid() {
 		llog.Warn("received invalid message (possibly from a newer version?)", kv)
-		return nil
+		return nil, false
 	}
 	if !msg.Verify() {
 		llog.Warn("received incorrectly signed message", kv)
-		return nil
+		return nil, false
 	}
 
 	t := transactions[msg.Id]
@@ -47,7 +56,8 @@ func incoming(transactions map[string]*tx, msg *lproto.TxMsg) *lproto.TxMsg {
 		kv["txExpectedSeq"] = t.expectedSeq
 		kv["txReceivedSeq"] = msg.Seq
 		llog.Warn("received message with wrong seq", kv)
-		return nil
+		// end the transaction since we got out of order
+		return nil, true
 	}
 
 	nextSeq := msg.Seq + 1
@@ -57,6 +67,7 @@ func incoming(transactions map[string]*tx, msg *lproto.TxMsg) *lproto.TxMsg {
 	}
 
 	var hasInner bool
+	var ended bool
 	if r := msg.GetInitialReport(); r != nil {
 		retTx.Inner = handleIncomingInitialReport(transactions, msg.Id, r)
 		hasInner = true
@@ -64,7 +75,8 @@ func incoming(transactions map[string]*tx, msg *lproto.TxMsg) *lproto.TxMsg {
 	} else if r := msg.GetReport(); r != nil {
 		if t == nil {
 			llog.Warn("received Report for unknown transaction", kv)
-			return nil
+			// we don't know about this transaction anymore so end
+			return nil, true
 		}
 		iR, iF := handleIncomingReport(t, r)
 		if iR != nil {
@@ -73,6 +85,7 @@ func incoming(transactions map[string]*tx, msg *lproto.TxMsg) *lproto.TxMsg {
 			retTx.Inner = iF
 			// since this is a fin, we can destroy this transaction after
 			// writing
+			ended = true
 			defer func() {
 				cleanTx(transactions, t.id)
 			}()
@@ -82,28 +95,30 @@ func incoming(transactions map[string]*tx, msg *lproto.TxMsg) *lproto.TxMsg {
 	} else if f := msg.GetFin(); f != nil {
 		if t == nil {
 			llog.Warn("received Fin for unknown transaction", kv)
-			return nil
+			// we don't know about this transaction anymore so end
+			return nil, true
 		}
 		handleFin(transactions, t, f)
+		ended = true
 
 	} else {
 		llog.Warn("received unknown proto.Message type", kv)
 	}
 
-	if !hasInner {
-		return nil
+	if hasInner {
+		// We re-get t because the transaction might not have existed when t was
+		// created, although it definitely exists now
+		t = transactions[msg.Id]
+		// Add 2 here since the next seq should be the next incoming one which is
+		// one greater than the one we just sent
+		t.expectedSeq = nextSeq + 1
+		t.lastMessage = time.Now()
+
+		retTx.Sign()
+	} else {
+		retTx = nil
 	}
-
-	// We re-get t because the transaction might not have existed when t was
-	// created, although it definitely exists now
-	t = transactions[msg.Id]
-	// Add 2 here since the next seq should be the next incoming one which is
-	// one greater than the one we just sent
-	t.expectedSeq = nextSeq + 1
-	t.lastMessage = time.Now()
-
-	retTx.Sign()
-	return retTx
+	return retTx, ended
 }
 
 // This will only occur on the master's side, the slave will only ever be

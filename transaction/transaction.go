@@ -50,7 +50,8 @@ func txSpin() {
 	for {
 		select {
 		case im := <-incomingMsgCh:
-			im.replyCh <- incoming(transactions, im.msg)
+			n, end := incoming(transactions, im.msg)
+			im.replyCh <- incomingReply{n, end}
 		case it := <-initiateTxCh:
 			it.replyCh <- initiate(transactions, it.idStr, it.srcIP)
 		case <-cleanTick:

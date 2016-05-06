@@ -22,8 +22,9 @@ func TestIncoming(t *T) {
 
 	t.Log("sending slave's initial report to master")
 	config.IsMaster = true
-	msg := incoming(masterTxs, initReport)
+	msg, end := incoming(masterTxs, initReport)
 	require.NotNil(t, msg)
+	require.False(t, end)
 
 	assert.Equal(t, initReport.Id, msg.Id)
 	assert.Equal(t, initReport.Seq+1, msg.Seq)
@@ -37,8 +38,9 @@ func TestIncoming(t *T) {
 
 	t.Log("sending master's first report to slave")
 	config.IsMaster = false
-	msg2 := incoming(slaveTxs, msg)
+	msg2, end := incoming(slaveTxs, msg)
 	require.NotNil(t, msg2)
+	require.False(t, end)
 
 	assert.Equal(t, msg.Id, msg2.Id)
 	assert.Equal(t, msg.Seq+1, msg2.Seq)
@@ -46,8 +48,9 @@ func TestIncoming(t *T) {
 
 	t.Log("sending slave's second report to master")
 	config.IsMaster = true
-	msg3 := incoming(masterTxs, msg2)
+	msg3, end := incoming(masterTxs, msg2)
 	require.NotNil(t, msg3)
+	require.False(t, end)
 
 	assert.Equal(t, msg2.Id, msg3.Id)
 	assert.Equal(t, msg2.Seq+1, msg3.Seq)
@@ -61,8 +64,9 @@ func TestIncoming(t *T) {
 
 	t.Log("sending master's second report to slave")
 	config.IsMaster = false
-	msg4 := incoming(slaveTxs, msg3)
+	msg4, end := incoming(slaveTxs, msg3)
 	require.NotNil(t, msg4)
+	require.False(t, end)
 
 	assert.Equal(t, msg3.Id, msg4.Id)
 	assert.Equal(t, msg3.Seq+1, msg4.Seq)
@@ -70,8 +74,9 @@ func TestIncoming(t *T) {
 
 	t.Log("sending slave's final report to master")
 	config.IsMaster = true
-	msg5 := incoming(masterTxs, msg4)
+	msg5, end := incoming(masterTxs, msg4)
 	assert.NotNil(t, msg5)
+	require.True(t, end)
 
 	assert.Equal(t, msg4.Id, msg5.Id)
 	assert.Equal(t, msg4.Seq+1, msg5.Seq)
@@ -83,8 +88,9 @@ func TestIncoming(t *T) {
 
 	t.Log("sending master fin to slave")
 	config.IsMaster = false
-	msg6 := incoming(slaveTxs, msg5)
+	msg6, end := incoming(slaveTxs, msg5)
 	require.Nil(t, msg6)
+	require.True(t, end)
 
 	// make sure the slave transaction is cleaned up
 	assert.NotContains(t, msg5.Id, slaveTxs)
