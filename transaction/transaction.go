@@ -40,6 +40,7 @@ type tx struct {
 	name        string
 	tripTimes   []time.Duration
 	offsets     []time.Duration
+	trips       []Trip
 	lastMessage time.Time
 	expectedSeq int32
 }
@@ -89,6 +90,7 @@ func newTx(transactions map[string]*tx, id, name string) *tx {
 	if config.IsMaster {
 		t.tripTimes = make([]time.Duration, 0, config.Iterations+1)
 		t.offsets = make([]time.Duration, 0, config.Iterations+1)
+		t.trips = make([]Trip, 0, config.Iterations)
 	}
 	transactions[id] = t
 	return t

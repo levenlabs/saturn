@@ -150,19 +150,27 @@ func handleIncomingReport(t *tx, rep *lproto.Report) (*lproto.TxMsg_Report, *lpr
 	llog.Debug("incoming report", kv, llog.KV{"isMaster": config.IsMaster})
 
 	if config.IsMaster {
-		//if this is the 3rd packet then we need to include the RTT for the first offest
+		//if this is the 3rd packet then we need to include the RTT for the first offset
 		if len(t.offsets) == 1 && len(t.tripTimes) == 0 {
 			t.tripTimes = append(t.tripTimes, time.Duration(rep.Diff)-t.offsets[0])
 		}
 		t.tripTimes = append(t.tripTimes, now.Sub(t.lastMessage))
 		t.offsets = append(t.offsets, diff)
-		kv["txNumTrips"] = len(t.tripTimes)
+		trip := Trip{
+			RTT:        now.Sub(t.lastMessage).Nanoseconds(),
+			MasterDiff: diff.Nanoseconds(),
+			SlaveDiff:  rep.Diff,
+		}
+		t.trips = append(t.trips, trip)
+		numTrips := len(t.trips)
+		kv["txNumTrips"] = numTrips
 
 		//first trip is free and then each iteration is 2 trips
 		//seq starts at 1 so after 1 iteration it'll be at 3
 		//only the master can terminate a sequence
-		if (t.expectedSeq / 2) >= config.Iterations {
+		if numTrips >= config.Iterations {
 			offset, err := calculateAverageOffset(t.tripTimes, t.offsets)
+			offset2, latency, _ := calculateAverageOffsetLatency(t.trips)
 			fin := &lproto.Fin{}
 			if err != nil {
 				fin.Error = err.Error()
@@ -170,8 +178,10 @@ func handleIncomingReport(t *tx, rep *lproto.Report) (*lproto.TxMsg_Report, *lpr
 			} else {
 				fin.Offset = offset
 				kv["offset"] = offset
+				kv["offset2"] = offset2
 				absOff := math.Abs(offset)
-				llog.Info("slave offset", kv, llog.KV{"absOffset": absOff})
+				absOff2 := math.Abs(offset2)
+				llog.Info("slave offset", kv, llog.KV{"absOffset": absOff, "absOffset2": absOff2, "latency": latency})
 				if config.Threshold < absOff {
 					llog.Warn("slave offset is over threshold", kv)
 				}
@@ -185,7 +195,7 @@ func handleIncomingReport(t *tx, rep *lproto.Report) (*lproto.TxMsg_Report, *lpr
 
 	return &lproto.TxMsg_Report{
 		Report: &lproto.Report{
-			Diff: int64(diff),
+			Diff: diff.Nanoseconds(),
 			Time: now.UnixNano(),
 		},
 	}, nil

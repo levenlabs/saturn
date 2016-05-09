@@ -18,7 +18,7 @@ var (
 	Name       string
 	Interval   int32
 	HMACKey    []byte
-	Iterations int32
+	Iterations int
 	IsMaster   bool
 	Threshold  float64
 	LogLevel   string
@@ -95,7 +95,7 @@ func init() {
 	k, _ := l.ParamStr("--hmac-key")
 	HMACKey = []byte(k)
 	i, _ := l.ParamInt("--rounds")
-	Iterations = int32(i)
+	Iterations = i
 	i, _ = l.ParamInt("--interval")
 	Interval = int32(i)
 	i, _ = l.ParamInt("--threshold")
