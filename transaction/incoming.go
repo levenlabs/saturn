@@ -171,8 +171,7 @@ func handleIncomingReport(t *tx, rep *lproto.Report) (*lproto.TxMsg_Report, *lpr
 		//seq starts at 1 so after 1 iteration it'll be at 3
 		//only the master can terminate a sequence
 		if numTrips >= config.Iterations {
-			offset, err := calculateAverageOffset(t.tripTimes, t.offsets)
-			offset2, latency, _ := calculateAverageOffsetLatency(t.trips)
+			offset, latency, err := calculateAverageOffsetLatency(t.trips)
 			fin := &lproto.Fin{}
 			if err != nil {
 				fin.Error = err.Error()
@@ -180,10 +179,8 @@ func handleIncomingReport(t *tx, rep *lproto.Report) (*lproto.TxMsg_Report, *lpr
 			} else {
 				fin.Offset = offset
 				kv["offset"] = offset
-				kv["offset2"] = offset2
 				absOff := math.Abs(offset)
-				absOff2 := math.Abs(offset2)
-				llog.Info("slave offset", kv, llog.KV{"absOffset": absOff, "absOffset2": absOff2, "latency": latency})
+				llog.Info("slave offset", kv, llog.KV{"absOffset": absOff, "latency": latency})
 				if config.Threshold < absOff {
 					llog.Warn("slave offset is over threshold", kv)
 				}

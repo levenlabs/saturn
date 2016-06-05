@@ -2,50 +2,73 @@ package transaction
 
 import (
 	. "testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestCalcAvg1(t *T) {
-	d := []time.Duration{
-		time.Duration(2) * time.Millisecond,
+	trips := []Trip{
+		// offset: 10 latency: 1
+		Trip{
+			MasterDiff: 9000000,
+			SlaveDiff:  -11000000,
+			RTT:        2000000,
+		},
 	}
-	o := []time.Duration{
-		1000000,
-	}
-	a, err := calculateAverageOffset(d, o)
+	o, l, err := calculateAverageOffsetLatency(trips)
 	assert.Nil(t, err)
-	assert.Equal(t, float64(2), a)
+	assert.Equal(t, float64(10), o)
+	assert.Equal(t, float64(1), l)
 }
 
 func TestCalcAvg2(t *T) {
-	d := []time.Duration{
-		time.Duration(1) * time.Millisecond,
-		time.Duration(1) * time.Millisecond,
+	trips := []Trip{
+		// offset: 10 latency: 1
+		Trip{
+			MasterDiff: 9000000,
+			SlaveDiff:  -11000000,
+			RTT:        2000000,
+		},
+
+		// offset: 20 latency: 1
+		Trip{
+			MasterDiff: 19000000,
+			SlaveDiff:  -21000000,
+			RTT:        2000000,
+		},
 	}
-	o := []time.Duration{
-		1000000,
-		1000000,
-	}
-	a, err := calculateAverageOffset(d, o)
+	o, l, err := calculateAverageOffsetLatency(trips)
 	assert.Nil(t, err)
-	assert.Equal(t, float64(1.5), a)
+	assert.Equal(t, float64(15), o)
+	assert.Equal(t, float64(1), l)
 }
 
 func TestCalcAvg3(t *T) {
-	//the outlier (2) should be eliminated so this should match TestCalcAvg2
-	d := []time.Duration{
-		time.Duration(1) * time.Millisecond,
-		time.Duration(1) * time.Millisecond,
-		time.Duration(2) * time.Millisecond,
+	trips := []Trip{
+		// offset: 10 latency: 1
+		Trip{
+			MasterDiff: 9000000,
+			SlaveDiff:  -11000000,
+			RTT:        2000000,
+		},
+
+		// offset: 20 latency: 1
+		Trip{
+			MasterDiff: 19000000,
+			SlaveDiff:  -21000000,
+			RTT:        2000000,
+		},
+
+		// offset: 40 latency: 2
+		// this should be eliminated
+		Trip{
+			MasterDiff: 38000000,
+			SlaveDiff:  -32000000,
+			RTT:        4000000,
+		},
 	}
-	o := []time.Duration{
-		1000000,
-		1000000,
-		9000000,
-	}
-	a, err := calculateAverageOffset(d, o)
+	o, l, err := calculateAverageOffsetLatency(trips)
 	assert.Nil(t, err)
-	assert.Equal(t, float64(1.5), a)
+	assert.Equal(t, float64(15), o)
+	assert.Equal(t, float64(1), l)
 }
