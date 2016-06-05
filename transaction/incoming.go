@@ -1,6 +1,7 @@
 package transaction
 
 import (
+	"fmt"
 	"math"
 	"time"
 
@@ -40,7 +41,8 @@ var incomingMsgCh = make(chan incomingMsg)
 func incoming(transactions map[string]*tx, msg *lproto.TxMsg) (*lproto.TxMsg, bool) {
 
 	kv := llog.KV{
-		"msg": msg,
+		"id":  msg.Id,
+		"sig": fmt.Sprintf("%x", msg.Sig),
 	}
 	if !msg.Valid() {
 		llog.Warn("received invalid message (possibly from a newer version?)", kv)

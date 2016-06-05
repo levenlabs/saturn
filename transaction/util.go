@@ -73,7 +73,8 @@ func calculateAverageOffsetLatency(trips []Trip) (float64, float64, error) {
 			sortedTimes[i] = t.RTT
 		}
 		sort.Sort(sortedTimes)
-		percentIndex := int64(float64(len(sortedTimes)) * 0.6)
+		// make sure we have at most the length of the trips - 1 and at least 3
+		percentIndex := int64(math.Min(float64(len(trips)) - 1, math.Max(3, (float64(len(sortedTimes)) * 0.6))))
 		maxNanosecs = sortedTimes[percentIndex]
 	}
 	var latency float64
