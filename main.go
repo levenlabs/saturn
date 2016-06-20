@@ -82,7 +82,11 @@ func readAndUnmarshal(c *net.UDPConn, kv llog.KV) (*lproto.TxMsg, *net.UDPAddr, 
 	b := make([]byte, 1024)
 	n, addr, err := c.ReadFromUDP(b)
 	if err != nil {
-		llog.Error("error reading from udp socket", kv.Set("err", err))
+		fn := llog.Error
+		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+			fn = llog.Warn
+		}
+		fn("error reading from udp socket", kv.Set("err", err))
 		return nil, nil, false
 	}
 
