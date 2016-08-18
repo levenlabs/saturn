@@ -37,16 +37,6 @@ func main() {
 	}
 }
 
-func lookupMaster() *net.UDPAddr {
-	//see if they passed a hostname without a port and then do a srv lookup
-	masterAddr := srvclient.MaybeSRV(config.MasterAddr)
-	serverAddr, err := net.ResolveUDPAddr("udp", masterAddr)
-	if err != nil {
-		llog.Fatal("error resolving UDP addr", llog.KV{"err": err, "addr": masterAddr})
-	}
-	return serverAddr
-}
-
 func advertise() {
 	if config.SkyAPIAddr == "" {
 		return
@@ -54,13 +44,12 @@ func advertise() {
 	kv := llog.KV{"skyapiAddr": config.SkyAPIAddr, "listenAddr": config.ListenAddr}
 	llog.Info("connecting to skyapi", kv)
 
-	kv["err"] = client.ProvideOpts(client.Opts{
+	client.ProvideOpts(client.Opts{
 		SkyAPIAddr:        config.SkyAPIAddr,
 		Service:           "saturn",
 		ThisAddr:          config.ListenAddr,
 		ReconnectAttempts: -1,
 	})
-	llog.Fatal("skyapi giving up reconnecting", kv)
 }
 
 func marshalAndWrite(msg proto.Message, c *net.UDPConn, dst *net.UDPAddr, kv llog.KV) bool {
@@ -72,7 +61,7 @@ func marshalAndWrite(msg proto.Message, c *net.UDPConn, dst *net.UDPAddr, kv llo
 
 	_, err = c.WriteToUDP(b, dst)
 	if err != nil {
-		llog.Error("error writing msg", kv.Set("err", err))
+		llog.Warn("error writing msg", kv.Set("err", err))
 		return false
 	}
 	return true
@@ -117,8 +106,14 @@ func reportSpin() {
 }
 
 func lookupAndSlaveReport() {
-	masterAddr := lookupMaster()
-	doSlaveReport(masterAddr)
+	//see if they passed a hostname without a port and then do a srv lookup
+	masterAddr := srvclient.MaybeSRV(config.MasterAddr)
+	serverAddr, err := net.ResolveUDPAddr("udp", masterAddr)
+	if err != nil {
+		llog.Warn("error resolving master UDP addr", llog.KV{"err": err, "addr": masterAddr})
+		return
+	}
+	doSlaveReport(serverAddr)
 }
 
 func doSlaveReport(masterAddr *net.UDPAddr) bool {
@@ -135,7 +130,7 @@ func doSlaveReport(masterAddr *net.UDPAddr) bool {
 
 	c, err := net.ListenUDP("udp", lAddr)
 	if err != nil {
-		llog.Error("error connecting to master", kv.Set("err", err))
+		llog.Fatal("error making udp listen socket", kv.Set("err", err))
 		return false
 	}
 	defer c.Close()
